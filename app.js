@@ -518,40 +518,29 @@ function downloadSingleTrack(index) {
 }
 
 // Download di tutte le tracce aggregate in un unico archivio ZIP
-async function downloadAllAsZip() {
+// Download di tutte le tracce singolarmente in sequenza
+async function downloadAllAsFiles() {
     if (!activeNotebookData) return;
     
     try {
-        showLoader("Creazione del pacchetto ZIP finale in corso...");
+        showLoader("Preparazione del download delle tracce...");
         updateProgress(10);
         
-        const zip = new JSZip();
-        let added = 0;
-        
-        for (const track of activeNotebookData.list) {
-            zip.file(track.filename, track.fileData);
-            added++;
-            updateProgress(10 + Math.floor((added / activeNotebookData.list.length) * 80));
+        for (let i = 0; i < activeNotebookData.list.length; i++) {
+            const track = activeNotebookData.list[i];
+            loaderStatus.innerText = `Download in corso: ${track.filename} (${i + 1}/${activeNotebookData.list.length})`;
+            
+            downloadSingleTrack(i);
+            
+            updateProgress(10 + Math.floor(((i + 1) / activeNotebookData.list.length) * 90));
+            // Intervallo di sicurezza per evitare blocchi del browser su download multipli
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
-        
-        updateProgress(90);
-        loaderStatus.innerText = "Compressione finale dello ZIP...";
-        
-        const content = await zip.generateAsync({ type: "blob" });
-        const url = URL.createObjectURL(content);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${activeNotebookData.name}_Audio.zip`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
         
         hideLoader();
     } catch (e) {
         hideLoader();
-        showError("Errore durante la creazione dello ZIP: " + e.message);
+        showError("Errore durante il download delle tracce: " + e.message);
     }
 }
 
@@ -621,4 +610,4 @@ fileInput.addEventListener('change', () => {
     }
 });
 
-downloadAllBtn.addEventListener('click', downloadAllAsZip);
+downloadAllBtn.addEventListener('click', downloadAllAsFiles);
