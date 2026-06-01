@@ -1,4 +1,4 @@
-Goodnotes Audio Exporter
+****Goodnotes Audio Exporter****
 
 GoodNotes Audio Exporter è uno strumento leggero, veloce e focalizzato sulla privacy per estrarre in modo organizzato tutte le registrazioni audio presenti nei tuoi taccuini di GoodNotes (esportati in formato originale .goodnotes o .zip).
 
