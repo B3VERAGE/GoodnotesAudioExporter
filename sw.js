@@ -1,5 +1,5 @@
 // Nome della cache locale
-const CACHE_NAME = 'goodnotes-audio-exporter-v5';
+const CACHE_NAME = 'goodnotes-audio-exporter-v6';
 
 // File da memorizzare in cache all'installazione per abilitare l'offline permanente
 const ASSETS_TO_CACHE = [

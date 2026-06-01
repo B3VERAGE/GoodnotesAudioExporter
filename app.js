@@ -571,7 +571,7 @@ async function processGoodnotesFile(file) {
         hideLoader();
         showError(e.message);
     }
-}}
+}
 
 // ================================================================================
 // RENDERING GRAFICO DELL'INTERFACCIA UTENTE
