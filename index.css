@@ -82,13 +82,32 @@ body::after {
 }
 
 /* Header */
-header {
-    text-align: center;
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 0.5rem;
     animation: fadeInDown 0.8s ease-out;
+    flex-wrap: wrap;
+    gap: 1rem;
 }
 
-header h1 {
+.header-main {
+    flex: 1;
+    text-align: left;
+}
+
+@media (max-width: 600px) {
+    .app-header {
+        flex-direction: column;
+        align-items: center;
+    }
+    .header-main {
+        text-align: center;
+    }
+}
+
+.app-header h1 {
     font-family: var(--font-heading);
     font-size: 2.75rem;
     font-weight: 800;
@@ -99,10 +118,41 @@ header h1 {
     margin-bottom: 0.5rem;
 }
 
-header p {
+.app-header p {
     font-size: 1.05rem;
     color: var(--text-secondary);
     font-weight: 400;
+}
+
+.lang-switcher {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 2px;
+}
+
+.lang-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.lang-btn:hover {
+    color: var(--text-primary);
+}
+
+.lang-btn.active {
+    background: var(--accent-color);
+    color: white;
+    box-shadow: 0 2px 8px var(--accent-glow);
 }
 
 /* Glassmorphism Card Base */

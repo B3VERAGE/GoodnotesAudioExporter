@@ -18,7 +18,9 @@ const errorAlert = document.getElementById('error-alert');
 const errorMessage = document.getElementById('error-message');
 
 // Stato dell'applicazione in memoria
+// Stato dell'applicazione in memoria
 let activeNotebookData = null;
+let currentLang = 'en';
 
 // parole chiave italiane per valutare l'accuratezza dei titoli decrittati
 const CLEAN_KEYWORDS = [
@@ -30,6 +32,116 @@ const CLEAN_KEYWORDS = [
     "trombosi", "venosa", "profonda", "dissecazione", "ischemia", "acuta", "arto",
     "inf", "trapianto", "terapia", "dispnea", "dispositivi", "semeiotica", "anatomia"
 ];
+
+// Dizionario delle traduzioni per internazionalizzazione (IT / EN)
+const TRANSLATIONS = {
+    it: {
+        title: "GoodNotes Audio Exporter",
+        subtitle: "Estrai, decifra e rinomina le tue lezioni audio in totale privacy",
+        dropzoneTitle: "Trascina qui il tuo quaderno .goodnotes",
+        dropzoneSubtitle: "oppure tocca per sfogliare i tuoi file",
+        loaderExtracting: "Lettura ed estrazione del pacchetto .goodnotes in corso...",
+        loaderParsing: "Analisi del database index.events.pb...",
+        loaderScanning: "Scansione dei file audio e analisi delle date...",
+        loaderFinalizing: "Preparazione del download delle tracce...",
+        loaderZipProgress: "Creazione del pacchetto ZIP finale in corso...",
+        loaderZipCompressing: "Compressione finale dello ZIP...",
+        zipButton: "Scarica tutto (.zip)",
+        filesButton: "Scarica m4a singoli",
+        unnamedRecording: "Registrazione Senza Nome",
+        clipAudio: "Clip Audio",
+        errorInvalidFile: "File non valido. Si prega di trascinare esclusivamente un file di tipo .goodnotes o .zip.",
+        errorNoEvents: "Il file caricato non sembra un quaderno Goodnotes valido (manca index.events.pb).",
+        errorNoFolder: "Nessuna cartella attachments trovata nel quaderno. Non ci sono registrazioni.",
+        errorNoAudio: "Nessuna registrazione audio attiva trovata all'interno del quaderno.",
+        errorZip: "Errore durante la creazione dello ZIP: ",
+        errorDownload: "Errore durante il download delle tracce: ",
+        trackTag: "Traccia",
+        dateTag: "Data",
+        durationTag: "Durata",
+        weightTag: "Peso",
+        statsSuffix: "registrazioni audio estratte (duplicati rimossi)",
+        footerText: "Disegnato e sviluppato in locale al 100% offline. Sincronizzazione automatica con iCloud attiva.",
+        downloadSingle: "Scarica traccia singola",
+        downloadingSingle: "Download in corso: "
+    },
+    en: {
+        title: "GoodNotes Audio Exporter",
+        subtitle: "Extract, decrypt and rename your audio lectures in total privacy",
+        dropzoneTitle: "Drag and drop your .goodnotes notebook here",
+        dropzoneSubtitle: "or tap to browse your files",
+        loaderExtracting: "Reading and extracting the .goodnotes package...",
+        loaderParsing: "Analyzing the index.events.pb database...",
+        loaderScanning: "Scanning audio files and analyzing dates...",
+        loaderFinalizing: "Preparing track download...",
+        loaderZipProgress: "Creating the final ZIP package...",
+        loaderZipCompressing: "Final compression of the ZIP file...",
+        zipButton: "Download all (.zip)",
+        filesButton: "Download single m4as",
+        unnamedRecording: "Unnamed Recording",
+        clipAudio: "Audio Clip",
+        errorInvalidFile: "Invalid file. Please drag and drop a .goodnotes or .zip file only.",
+        errorNoEvents: "The uploaded file does not seem to be a valid Goodnotes notebook (missing index.events.pb).",
+        errorNoFolder: "No attachments folder found in the notebook. There are no recordings.",
+        errorNoAudio: "No active audio recordings found in the notebook.",
+        errorZip: "Error while creating ZIP: ",
+        errorDownload: "Error while downloading tracks: ",
+        trackTag: "Track",
+        dateTag: "Date",
+        durationTag: "Duration",
+        weightTag: "Size",
+        statsSuffix: "audio recordings extracted (duplicates removed)",
+        footerText: "Designed and developed 100% locally offline. Automatic iCloud sync active.",
+        downloadSingle: "Download single track",
+        downloadingSingle: "Downloading: "
+    }
+};
+
+function applyLanguage(langCode) {
+    currentLang = langCode;
+    const l = TRANSLATIONS[langCode];
+    
+    // Cambia pulsante attivo
+    document.getElementById('lang-btn-it').classList.toggle('active', langCode === 'it');
+    document.getElementById('lang-btn-en').classList.toggle('active', langCode === 'en');
+    
+    // Testi statici
+    document.getElementById('app-title').innerText = l.title;
+    document.getElementById('app-subtitle').innerText = l.subtitle;
+    
+    // Dropzone
+    const dropzoneTitle = dropZone.querySelector('h3');
+    const dropzoneSubtitle = dropZone.querySelector('p');
+    if (dropzoneTitle) dropzoneTitle.innerText = l.dropzoneTitle;
+    if (dropzoneSubtitle) dropzoneSubtitle.innerText = l.dropzoneSubtitle;
+    
+    // Pulsanti (se visibili)
+    const downloadZipBtn = document.getElementById('download-all-btn');
+    const downloadM4aBtn = document.getElementById('download-files-btn');
+    
+    if (downloadZipBtn) {
+        const svg = downloadZipBtn.querySelector('svg');
+        downloadZipBtn.innerHTML = '';
+        if (svg) downloadZipBtn.appendChild(svg);
+        downloadZipBtn.appendChild(document.createTextNode(' ' + l.zipButton));
+    }
+    
+    if (downloadM4aBtn) {
+        const svg = downloadM4aBtn.querySelector('svg');
+        downloadM4aBtn.innerHTML = '';
+        if (svg) downloadM4aBtn.appendChild(svg);
+        downloadM4aBtn.appendChild(document.createTextNode(' ' + l.filesButton));
+    }
+    
+    // Footer
+    const footer = document.querySelector('.app-footer p');
+    if (footer) footer.innerText = l.footerText;
+    
+    // Aggiorna elenco tracce se presenti
+    if (activeNotebookData) {
+        renderResults();
+    }
+}
 
 // ================================================================================
 // DECODIFICATORE PROTOBUF BINARIO ULTRA-LEGGERO E NATIVO
@@ -154,7 +266,7 @@ function parseEventsMapping(eventsPbData) {
     // Unione dei dati
     const mappaAudio = {};
     for (const [s_id, att_uuid] of Object.entries(sessionToAttachment)) {
-        const title = sessionToTitle[s_id] || "Registrazione Senza Nome";
+        const title = sessionToTitle[s_id] || "";
         const duration = sessionToDuration[s_id] || "N/A";
         
         if (duration !== "N/A") {
@@ -319,35 +431,35 @@ function getFilenameScore(filename) {
 // ================================================================================
 // CORE ENGINE: ESTRAZIONE E DECODIFICA DEL NOTEBOOK
 // ================================================================================
-
 async function processGoodnotesFile(file) {
+    const l = TRANSLATIONS[currentLang];
     try {
         hideError();
-        showLoader("Lettura ed estrazione del pacchetto .goodnotes in corso...");
+        showLoader(l.loaderExtracting);
         updateProgress(10);
         
         // Estrazione del file ZIP
         const zip = await JSZip.loadAsync(file);
         
         updateProgress(30);
-        loaderStatus.innerText = "Analisi del database index.events.pb...";
+        loaderStatus.innerText = l.loaderParsing;
         
         const eventsPb = zip.file("index.events.pb");
         if (!eventsPb) {
-            throw new Error("Il file caricato non sembra un quaderno Goodnotes valido (manca index.events.pb).");
+            throw new Error(l.errorNoEvents);
         }
         
         const eventsData = await eventsPb.async("uint8array");
         const mappaAudio = parseEventsMapping(eventsData);
         
         updateProgress(50);
-        loaderStatus.innerText = "Scansione dei file audio e analisi delle date...";
+        loaderStatus.innerText = l.loaderScanning;
         
         const candidates = [];
         const attachmentsFolder = zip.folder("attachments");
         
         if (!attachmentsFolder) {
-            throw new Error("Nessuna cartella attachments trovata nel quaderno. Non ci sono registrazioni.");
+            throw new Error(l.errorNoFolder);
         }
         
         // Raccogliamo tutti gli audio presenti
@@ -378,7 +490,7 @@ async function processGoodnotesFile(file) {
         }
         
         if (candidates.length === 0) {
-            throw new Error("Nessuna registrazione audio attiva trovata all'interno del quaderno.");
+            throw new Error(l.errorNoAudio);
         }
         
         // Deduplicazione fisica in base alla dimensione
@@ -394,8 +506,8 @@ async function processGoodnotesFile(file) {
             if (list.length > 1) {
                 // Scegliamo il candidato col nome migliore
                 list.sort((a, b) => {
-                    const scoreA = a.titleOriginal === "Registrazione Senza Nome" ? -100 : getFilenameScore(cleanFilename(a.titleOriginal));
-                    const scoreB = b.titleOriginal === "Registrazione Senza Nome" ? -100 : getFilenameScore(cleanFilename(b.titleOriginal));
+                    const scoreA = (!a.titleOriginal || a.titleOriginal.trim() === "") ? -100 : getFilenameScore(cleanFilename(a.titleOriginal));
+                    const scoreB = (!b.titleOriginal || b.titleOriginal.trim() === "") ? -100 : getFilenameScore(cleanFilename(b.titleOriginal));
                     return scoreB - scoreA;
                 });
                 deduplicatedCandidates.push(list[0]);
@@ -412,9 +524,9 @@ async function processGoodnotesFile(file) {
         const finalExportList = [];
         
         for (const cand of deduplicatedCandidates) {
-            let cleanTitle = "Registrazione Senza Nome";
-            if (!cand.titleOriginal || cand.titleOriginal.trim() === "" || cand.titleOriginal === "Registrazione Senza Nome") {
-                cleanTitle = `Clip Audio ${clipCounter}`;
+            let cleanTitle = "";
+            if (!cand.titleOriginal || cand.titleOriginal.trim() === "") {
+                cleanTitle = `${l.clipAudio} ${clipCounter}`;
                 clipCounter++;
             } else {
                 cleanTitle = cleanFilename(cand.titleOriginal);
@@ -441,7 +553,7 @@ async function processGoodnotesFile(file) {
         }
         
         updateProgress(90);
-        loaderStatus.innerText = "Preparazione del pacchetto di salvataggio...";
+        loaderStatus.innerText = l.loaderFinalizing;
         
         // Memorizza i dati per il download
         activeNotebookData = {
@@ -459,7 +571,7 @@ async function processGoodnotesFile(file) {
         hideLoader();
         showError(e.message);
     }
-}
+}}
 
 // ================================================================================
 // RENDERING GRAFICO DELL'INTERFACCIA UTENTE
@@ -468,8 +580,9 @@ async function processGoodnotesFile(file) {
 function renderResults() {
     if (!activeNotebookData) return;
     
+    const l = TRANSLATIONS[currentLang];
     notebookNameSpan.innerText = activeNotebookData.name;
-    notebookStatsSpan.innerText = `${activeNotebookData.list.length} registrazioni audio estratte (duplicati rimossi)`;
+    notebookStatsSpan.innerText = `${activeNotebookData.list.length} ${l.statsSuffix}`;
     
     recordingsContainer.innerHTML = '';
     
@@ -479,14 +592,14 @@ function renderResults() {
                 <div class="recording-details">
                     <div class="recording-name-clean">${item.filename}</div>
                     <div class="recording-meta">
-                        <span class="recording-tag">Traccia ${index + 1}</span>
-                        <span>Data: ${item.dateDisplay}</span>
-                        <span>Durata: ${item.duration}</span>
-                        <span>Peso: ${item.sizeMb} MB</span>
+                        <span class="recording-tag">${l.trackTag} ${index + 1}</span>
+                        <span>${l.dateTag}: ${item.dateDisplay}</span>
+                        <span>${l.durationTag}: ${item.duration}</span>
+                        <span>${l.weightTag}: ${item.sizeMb} MB</span>
                     </div>
                 </div>
                 <div class="recording-actions">
-                    <button class="btn-icon" title="Scarica traccia singola" onclick="downloadSingleTrack(${index})">
+                    <button class="btn-icon" title="${l.downloadSingle}" onclick="downloadSingleTrack(${index})">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
@@ -519,12 +632,12 @@ function downloadSingleTrack(index) {
 }
 
 // Download di tutte le tracce aggregate in un unico archivio ZIP
-// Download di tutte le tracce aggregate in un unico archivio ZIP
 async function downloadAllAsZip() {
     if (!activeNotebookData) return;
     
+    const l = TRANSLATIONS[currentLang];
     try {
-        showLoader("Creazione del pacchetto ZIP finale in corso...");
+        showLoader(l.loaderZipProgress);
         updateProgress(10);
         
         const zip = new JSZip();
@@ -537,7 +650,7 @@ async function downloadAllAsZip() {
         }
         
         updateProgress(90);
-        loaderStatus.innerText = "Compressione finale dello ZIP...";
+        loaderStatus.innerText = l.loaderZipCompressing;
         
         const content = await zip.generateAsync({ type: "blob" });
         const url = URL.createObjectURL(content);
@@ -553,7 +666,7 @@ async function downloadAllAsZip() {
         hideLoader();
     } catch (e) {
         hideLoader();
-        showError("Errore durante la creazione dello ZIP: " + e.message);
+        showError(l.errorZip + e.message);
     }
 }
 
@@ -561,13 +674,14 @@ async function downloadAllAsZip() {
 async function downloadAllAsFiles() {
     if (!activeNotebookData) return;
     
+    const l = TRANSLATIONS[currentLang];
     try {
-        showLoader("Preparazione del download delle tracce...");
+        showLoader(l.loaderFinalizing);
         updateProgress(10);
         
         for (let i = 0; i < activeNotebookData.list.length; i++) {
             const track = activeNotebookData.list[i];
-            loaderStatus.innerText = `Download in corso: ${track.filename} (${i + 1}/${activeNotebookData.list.length})`;
+            loaderStatus.innerText = `${l.downloadingSingle}${track.filename} (${i + 1}/${activeNotebookData.list.length})`;
             
             downloadSingleTrack(i);
             
@@ -579,7 +693,7 @@ async function downloadAllAsFiles() {
         hideLoader();
     } catch (e) {
         hideLoader();
-        showError("Errore durante il download delle tracce: " + e.message);
+        showError(l.errorDownload + e.message);
     }
 }
 
@@ -633,7 +747,7 @@ dropZone.addEventListener('drop', (e) => {
         if (file.name.endsWith('.goodnotes') || file.name.endsWith('.zip')) {
             processGoodnotesFile(file);
         } else {
-            showError("File non valido. Si prega di trascinare esclusivamente un file di tipo .goodnotes o .zip.");
+            showError(TRANSLATIONS[currentLang].errorInvalidFile);
         }
     }
 });
@@ -651,3 +765,14 @@ fileInput.addEventListener('change', () => {
 
 downloadAllBtn.addEventListener('click', downloadAllAsZip);
 downloadFilesBtn.addEventListener('click', downloadAllAsFiles);
+
+// Aggiunta ascoltatori per i bottoni dello switcher lingua
+document.getElementById('lang-btn-it').addEventListener('click', () => applyLanguage('it'));
+document.getElementById('lang-btn-en').addEventListener('click', () => applyLanguage('en'));
+
+// Rilevamento automatico lingua utente
+let defaultLang = 'en';
+if (navigator.language && navigator.language.startsWith('it')) {
+    defaultLang = 'it';
+}
+applyLanguage(defaultLang);
