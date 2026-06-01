@@ -8,7 +8,7 @@ const ASSETS_TO_CACHE = [
     './index.css',
     './app.js',
     './manifest.json',
-    './libs/jszip.min.js'
+    './jszip.min.js'
 ];
 
 // Evento di installazione: carica in cache tutti gli asset necessari

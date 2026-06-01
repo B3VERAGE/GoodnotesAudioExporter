@@ -103,8 +103,13 @@
 
     </div>
 
-    <!-- Script del framework locale per estrazione ZIP -->
-    <script src="libs/jszip.min.js"></script>
+    <!-- Script del framework locale per estrazione ZIP con fallback CDN -->
+    <script src="jszip.min.js"></script>
+    <script>
+        if (typeof JSZip === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+        }
+    </script>
     <!-- Script applicativo principale -->
     <script src="app.js"></script>
     
