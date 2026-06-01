@@ -13,6 +13,7 @@ const recordingsContainer = document.getElementById('recordings-container');
 const notebookNameSpan = document.getElementById('notebook-name');
 const notebookStatsSpan = document.getElementById('notebook-stats');
 const downloadAllBtn = document.getElementById('download-all-btn');
+const downloadFilesBtn = document.getElementById('download-files-btn');
 const errorAlert = document.getElementById('error-alert');
 const errorMessage = document.getElementById('error-message');
 
@@ -518,6 +519,44 @@ function downloadSingleTrack(index) {
 }
 
 // Download di tutte le tracce aggregate in un unico archivio ZIP
+// Download di tutte le tracce aggregate in un unico archivio ZIP
+async function downloadAllAsZip() {
+    if (!activeNotebookData) return;
+    
+    try {
+        showLoader("Creazione del pacchetto ZIP finale in corso...");
+        updateProgress(10);
+        
+        const zip = new JSZip();
+        let added = 0;
+        
+        for (const track of activeNotebookData.list) {
+            zip.file(track.filename, track.fileData);
+            added++;
+            updateProgress(10 + Math.floor((added / activeNotebookData.list.length) * 80));
+        }
+        
+        updateProgress(90);
+        loaderStatus.innerText = "Compressione finale dello ZIP...";
+        
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(content);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${activeNotebookData.name}_Audio.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        hideLoader();
+    } catch (e) {
+        hideLoader();
+        showError("Errore durante la creazione dello ZIP: " + e.message);
+    }
+}
+
 // Download di tutte le tracce singolarmente in sequenza
 async function downloadAllAsFiles() {
     if (!activeNotebookData) return;
@@ -610,4 +649,5 @@ fileInput.addEventListener('change', () => {
     }
 });
 
-downloadAllBtn.addEventListener('click', downloadAllAsFiles);
+downloadAllBtn.addEventListener('click', downloadAllAsZip);
+downloadFilesBtn.addEventListener('click', downloadAllAsFiles);
