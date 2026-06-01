@@ -36,13 +36,13 @@ const CLEAN_KEYWORDS = [
 
 function readVarint(arr, offsetRef) {
     let value = 0;
-    let shift = 0;
+    let multiplier = 1;
     while (true) {
         if (offsetRef.val >= arr.length) return null;
         let byte = arr[offsetRef.val++];
-        value |= (byte & 0x7f) << shift;
+        value += (byte & 0x7f) * multiplier;
         if (!(byte & 0x80)) break;
-        shift += 7;
+        multiplier *= 128;
     }
     return value;
 }
@@ -60,8 +60,8 @@ function decodeProtobufFields(bytes) {
         if (tag === null) break;
         offset = offsetRef.val;
         
-        const wireType = tag & 0x07;
-        const fieldNumber = tag >> 3;
+        const wireType = tag % 8;
+        const fieldNumber = Math.floor(tag / 8);
         
         if (wireType === 0) {
             const val = readVarint(bytes, offsetRef);
