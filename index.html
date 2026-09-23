@@ -2,141 +2,1227 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GoodNotes 6 Audio Exporter & Renamer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goodnotes AI Agent - Control Panel</title>
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
     
-    <!-- Meta SEO -->
-    <meta name="description" content="Decodifica, rinomina ed esporta in locale i file audio reali di GoodNotes 6. Funziona 100% offline, direttamente dal tuo iPad, iPhone o Mac con totale privacy.">
-    <meta name="theme-color" content="#15102a">
-    
-    <!-- Apple Web App Meta -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="GN Exporter">
-    
-    <!-- Manifest PWA -->
-    <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="index.css">
+    <style>
+        /* ==========================================================================
+           APPLE SYSTEM DESIGN SYSTEM & LIGHT THEME
+           ========================================================================== */
+        :root {
+            /* macOS Light System Colors */
+            --bg-light: #F5F5F7;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #FAFAFC;
+            --border-light: rgba(0, 0, 0, 0.06);
+            --border-light-focus: rgba(0, 122, 255, 0.4);
+            
+            /* Apple Accent System Colors */
+            --primary: #007AFF; /* Apple System Blue */
+            --secondary: #5856D6; /* Apple System Indigo */
+            --success: #34C759; /* Apple System Green */
+            --danger: #FF3B30; /* Apple System Red */
+            
+            --text-main: #1D1D1F; /* Apple Charcoal Dark Gray */
+            --text-muted: #86868B; /* Apple System Muted Gray */
+            
+            --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            --shadow-premium: 0 4px 20px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+            --shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Reset & Base styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 25px;
+            display: flex;
+            justify-content: center;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1280px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* ==========================================================================
+           HEADER / TOOLBAR SECTION
+           ========================================================================== */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 28px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            box-shadow: var(--shadow-premium);
+            transition: var(--transition-smooth);
+        }
+
+        .header-left h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
+        }
+
+        .header-left p {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            font-weight: 400;
+        }
+
+        .status-badge-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pulse-indicator {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        .system-status-card {
+            background: #F5F5F7;
+            border: 1px solid var(--border-light);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+        }
+
+        .system-status-card span {
+            color: var(--text-muted);
+        }
+
+        .system-status-card strong {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* ==========================================================================
+           MAIN CONTENT GRID
+           ========================================================================== */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Sidebar Settings Panel */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .settings-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: var(--shadow-premium);
+        }
+
+        .card-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #F5F5F7;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 10px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.88rem;
+            transition: var(--transition-smooth);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+        }
+
+        .form-group input:focus {
+            outline: none;
+            background: #FFFFFF;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+        }
+
+        .btn {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 10px 16px;
+            background: var(--primary);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: inherit;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            box-shadow: 0 2px 4px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn:hover {
+            background: #0066D6;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 122, 255, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .btn-secondary {
+            background: #E8E8ED;
+            color: #1D1D1F;
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: #E2E2E7;
+            color: #007AFF;
+            border-color: transparent;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-active { background-color: var(--success); }
+        .status-inactive { background-color: var(--text-muted); }
+        .status-danger { background-color: var(--danger); }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.84rem;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed var(--border-light);
+        }
+
+        .stat-row span {
+            color: var(--text-muted);
+        }
+
+        .stat-row strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* ==========================================================================
+           NOTEBOOK GRID SECTION
+           ========================================================================== */
+        .workspace-area {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .notebook-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .notebook-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 210px;
+            transition: var(--transition-smooth);
+            box-shadow: var(--shadow-premium);
+        }
+
+        .notebook-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(0, 122, 255, 0.15);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .notebook-header {
+            margin-bottom: 12px;
+        }
+
+        .notebook-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            background: rgba(0, 122, 255, 0.08);
+            color: #007AFF;
+            border: 1px solid rgba(0, 122, 255, 0.12);
+        }
+
+        .notebook-card h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+            letter-spacing: -0.3px;
+        }
+
+        .notebook-size {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        .notebook-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .notebook-actions .btn {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+        }
+
+        /* ==========================================================================
+           ANALYSIS & CONSOLE DRAWERS
+           ========================================================================== */
+        .drawer-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: var(--shadow-premium);
+            display: none; /* nascosto di default */
+            animation: fadeIn 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Table Styling */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            margin-top: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-light);
+            background: #FFFFFF;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+            text-align: left;
+        }
+
+        th {
+            background: #F5F5F7;
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-light);
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-light);
+            color: var(--text-main);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: #FAFAFC;
+        }
+
+        .original-title-muted {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 2px;
+        }
+
+        .badge-status-present {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            background: rgba(52, 199, 89, 0.08);
+            color: var(--success);
+            border: 1px solid rgba(52, 199, 89, 0.12);
+        }
+
+        /* Console styling (Xcode Style) */
+        .terminal-console {
+            background: #F4F4F6;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            padding: 16px;
+            font-family: "SF Mono", "Monaco", "Courier New", monospace;
+            font-size: 0.78rem;
+            color: #1D1D1F;
+            max-height: 250px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+            margin-top: 12px;
+        }
+
+        .close-btn {
+            float: right;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            transition: var(--transition-smooth);
+        }
+
+        .close-btn:hover {
+            color: var(--danger);
+        }
+
+        /* Loading Spinner overlay */
+        .loader-container {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.86rem;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0, 0, 0, 0.05);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-
-    <div class="app-container">
-        
-        <!-- Intestazione Principale -->
-        <header class="app-header">
-            <div class="header-main">
-                <h1 id="app-title">GoodNotes Audio Exporter</h1>
-                <p id="app-subtitle">Estrai, decifra e rinomina le tue lezioni audio in totale privacy</p>
+    <div class="container">
+        <!-- ==================================================================
+             HEADER
+             ================================================================== -->
+        <header>
+            <div class="header-left">
+                <h1>Goodnotes AI Agent</h1>
+                <p>Gestore automatico, decifratore audio e normalizzatore di metadati locale</p>
             </div>
-            <div class="lang-switcher">
-                <button id="lang-btn-it" class="lang-btn active">IT</button>
-                <button id="lang-btn-en" class="lang-btn">EN</button>
+            
+            <div class="status-badge-container">
+                <div class="loader-container" id="global-loader">
+                    <div class="spinner"></div>
+                    <span>Elaborazione in corso...</span>
+                </div>
+                <div class="system-status-card">
+                    <div class="pulse-indicator" id="health-pulse"></div>
+                    <span>Salute Operativa: <strong id="health-text">Caricamento...</strong></span>
+                </div>
             </div>
         </header>
 
-        <!-- Alert box per gli errori -->
-        <div id="error-alert" class="alert-box">
-            <span class="alert-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-            </span>
-            <div id="error-message" class="alert-message">Si è verificato un errore durante l'elaborazione del file.</div>
-        </div>
-
-        <!-- Card Principale dell'applicazione -->
-        <main class="glass-card">
-            
-            <!-- Zona Caricamento File (Drop Zone) -->
-            <div id="file-drop-zone" class="drop-zone">
-                <span class="drop-zone-icon">
-                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
-                </span>
-                <h3>Trascina qui il tuo quaderno .goodnotes</h3>
-                <p>oppure tocca per sfogliare i tuoi file</p>
-                <input type="file" id="goodnotes-file-input" class="file-input" accept=".goodnotes,.zip">
-            </div>
-
-            <!-- Schermata di caricamento (Loader) -->
-            <div id="app-loader" class="loader-container">
-                <div class="spinner"></div>
-                <h3 id="loader-status">Estrazione del quaderno in corso...</h3>
-                <div class="progress-bar-bg">
-                    <div id="loader-progress" class="progress-bar-fill"></div>
+        <!-- ==================================================================
+             MAIN GRID
+             ================================================================== -->
+        <div class="main-layout">
+            <!-- Left Sidebar (Settings and Status) -->
+            <div class="sidebar">
+                <!-- settings card -->
+                <div class="settings-card">
+                    <div class="card-title">⚙️ Configurazione Agente</div>
+                    <div class="form-group">
+                        <label for="api-key">GEMINI API KEY</label>
+                        <input type="password" id="api-key" placeholder="Incolla GEMINI_API_KEY qui...">
+                    </div>
+                    <button class="btn" onclick="saveApiKey()" style="margin-bottom: 20px;">Salva Chiave API</button>
+                    
+                    <div class="form-group" style="border-top: 1px solid var(--border-light); padding-top: 15px;">
+                        <label for="parent-search-dir">CARTELLA RICERCA ICLOUD</label>
+                        <input type="text" id="parent-search-dir" placeholder="Es: /Users/.../com~apple~CloudDocs/Università-Docs e Registrazioni">
+                    </div>
+                    <button class="btn btn-secondary" onclick="updateParentSearchDir()">Aggiorna Cartelle iCloud</button>
+                </div>
+                
+                <!-- status card -->
+                <div class="settings-card">
+                    <div class="card-title">📈 Operatività</div>
+                    <div class="stat-row">
+                        <span>Connessione Gemini</span>
+                        <strong id="gemini-status"><span class="status-dot status-inactive"></span>Non configurato</strong>
+                    </div>
+                    <div class="stat-row">
+                        <span>Notebooks Rilevati</span>
+                        <strong id="notebooks-count">0</strong>
+                    </div>
+                    <div class="stat-row">
+                        <span>Cartelle Audio Success</span>
+                        <strong id="audio-folders-count">0</strong>
+                    </div>
+                    <div class="stat-row">
+                        <span>Tracce Audio Esportate</span>
+                        <strong id="audio-files-count">0</strong>
+                    </div>
+                    <div class="stat-row">
+                        <span>Ultimo Controllo</span>
+                        <strong id="last-update" style="font-size: 0.75rem;">N/A</strong>
+                    </div>
                 </div>
             </div>
 
-            <!-- Sezione Risultati (mostrata solo dopo l'elaborazione) -->
-            <div id="results-panel" class="results-section">
-                
-                <div class="results-header">
-                    <div class="notebook-info">
-                        <div id="notebook-name" class="notebook-title">Nome Notebook</div>
-                        <div id="notebook-stats" class="notebook-subtitle">22 registrazioni rilevate (filtri duplicati attivi)</div>
+            <!-- Right Main Pane (Workspace) -->
+            <div class="workspace-area">
+                <div class="settings-card" style="padding: 30px;">
+                    <div class="card-title" style="margin-bottom: 10px; border-bottom: none; padding-bottom: 0;">
+                        📚 Quaderni Goodnotes in iCloud Drive
                     </div>
                     
-                    <div class="results-actions">
-                        <button id="download-all-btn" class="btn btn-success">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Scarica tutto (.zip)
+                    <!-- Real-Time iCloud Status Header Bar -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-light); padding-bottom: 15px;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                            <span class="status-dot status-active" style="animation: pulse 2s infinite ease-in-out;"></span>
+                            Collegamento a iCloud Drive attivo (Scansione in tempo reale)
+                        </span>
+                        <button class="btn btn-secondary" onclick="fetchNotebooks(); fetchSystemStatus();" style="width: auto; padding: 8px 16px; font-size: 0.82rem; margin: 0; display: flex; align-items: center; gap: 6px; box-shadow: none;">
+                            🔄 Ricarica Lista
                         </button>
-                        <button id="download-files-btn" class="btn btn-primary">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Scarica m4a singoli
-                        </button>
+                    </div>
+                    
+                    <!-- Notebook card deck -->
+                    <div class="notebook-grid" id="notebook-grid-container">
+                        <!-- Caricamento dinamico dei notebook -->
                     </div>
                 </div>
 
-                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 0.5rem 0;">
-
-                <!-- Lista delle tracce estratte -->
-                <div id="recordings-container" class="recordings-list">
-                    <!-- I singoli elementi verranno inseriti dinamicamente via JS -->
+                <!-- Analysis Drawer -->
+                <div class="drawer-card" id="analysis-drawer">
+                    <span class="close-btn" onclick="closeDrawer('analysis-drawer')">&times;</span>
+                    <div class="card-title" id="analysis-title">📊 Analisi Metadati & Registrazioni</div>
+                    
+                    <div class="notebook-actions" style="margin-top: -10px; margin-bottom: 20px; justify-content: flex-end;">
+                        <button class="btn" style="width: auto; padding: 10px 25px; font-size: 0.85rem;" id="btn-export-selected" onclick="exportSelectedTracks()">Esporta Tracce Selezionate</button>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px; text-align: center;"><input type="checkbox" id="check-all" onchange="toggleCheckAll(this)"></th>
+                                    <th>Data Reg.</th>
+                                    <th>Traccia Audio (Decifrata / Criptata Originale)</th>
+                                    <th>Durata</th>
+                                    <th>Dimensione</th>
+                                    <th style="text-align: center;">Ascolta</th>
+                                    <th>Stato</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analysis-table-body">
+                                <!-- Righe caricate dinamicamente -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
+                <!-- Export Terminal console Drawer -->
+                <div class="drawer-card" id="export-drawer">
+                    <span class="close-btn" onclick="closeDrawer('export-drawer')">&times;</span>
+                    <div class="card-title">🖥️ Output Console Esportazione</div>
+                    
+                    <div class="terminal-console" id="terminal-output">
+                        In attesa di operazioni...
+                    </div>
+                </div>
             </div>
-
-        </main>
-
-        <!-- Footer -->
-        <footer class="app-footer">
-            <p>Disegnato e sviluppato in locale al 100% offline. Sincronizzazione automatica con iCloud attiva.</p>
-        </footer>
-
+        </div>
     </div>
 
-    <!-- Script del framework locale per estrazione ZIP con fallback CDN -->
-    <script src="jszip.min.js"></script>
+    <!-- Floating Audio Player Bar -->
+    <div id="floating-audio-player" style="position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 650px; background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.08); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); z-index: 1000; padding: 14px 22px; transition: bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; align-items: center; gap: 15px;">
+        <div style="flex: 1; min-width: 0;">
+            <strong id="player-track-title" style="color: #1D1D1F; font-size: 0.92rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;">Nessuna traccia in riproduzione</strong>
+            <span id="player-track-notebook" style="color: #86868B; font-size: 0.75rem; display: block; margin-top: 2px;">Goodnotes Notebook</span>
+        </div>
+        <audio id="audio-element" controls style="flex: 2; height: 38px; border-radius: 10px; outline: none;"></audio>
+        <button onclick="closeAudioPlayer()" style="background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #86868B; transition: var(--transition-smooth); padding: 0 5px; line-height: 1;">&times;</button>
+    </div>
+
+    <!-- ==================================================================
+         CORE CONTROL PANEL JS LOGIC
+         ================================================================== -->
     <script>
-        if (typeof JSZip === 'undefined') {
-            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+        const API_URL = `${window.location.origin}/api`;
+        let activeNotebookName = "";
+        let availablePaths = [];
+        let folderMappings = {};
+        let currentParentSearchDir = "";
+
+        // Al caricamento della pagina
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchSystemStatus();
+            fetchNotebooks();
+            
+            // Aggiorna lo stato generale e la lista ogni 10 secondi per rilevare nuovi notebook su iCloud
+            setInterval(() => {
+                fetchSystemStatus();
+                fetchNotebooks();
+            }, 10000);
+        });
+
+        // Mostra o nasconde i loader
+        function toggleLoader(show) {
+            document.getElementById("global-loader").style.display = show ? "flex" : "none";
         }
-    </script>
-    <!-- Script applicativo principale -->
-    <script src="app.js"></script>
-    
-    <!-- Avvio del Service Worker per supporto Offline permanente -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('Service Worker registrato con successo!', reg.scope))
-                    .catch(err => console.log('Registrazione Service Worker fallita:', err));
+
+        // Recupera lo stato operativo
+        async function fetchSystemStatus() {
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                const data = await response.json();
+                
+                if (data.error) throw new Error(data.error);
+
+                document.getElementById("health-text").innerText = data.status;
+                document.getElementById("notebooks-count").innerText = data.notebooks_in_risorse;
+                document.getElementById("audio-folders-count").innerText = data.cartelle_audio_in_success;
+                document.getElementById("audio-files-count").innerText = data.file_audio_esportati;
+                document.getElementById("last-update").innerText = data.timestamp;
+
+                // Aggiorna indicatore chiave Gemini con tick o croce
+                const geminiStatus = document.getElementById("gemini-status");
+                if (data.api_key_configured) {
+                    if (data.api_key_valid) {
+                        geminiStatus.innerHTML = `<span class="status-dot status-active"></span>✓ Valida e Attiva`;
+                        geminiStatus.style.color = "var(--success)";
+                    } else {
+                        geminiStatus.innerHTML = `<span class="status-dot status-danger"></span>✗ Non Valida`;
+                        geminiStatus.style.color = "var(--danger)";
+                    }
+                    document.getElementById("api-key").placeholder = "••••••••••••••••••••••••••••••••";
+                } else {
+                    geminiStatus.innerHTML = `<span class="status-dot status-inactive"></span>✗ Mancante`;
+                    geminiStatus.style.color = "";
+                }
+
+                // Cambia colore del pulse in base alla salute
+                const pulse = document.getElementById("health-pulse");
+                pulse.className = "pulse-indicator";
+            } catch (err) {
+                console.error("Errore fetch status:", err);
+                document.getElementById("health-text").innerText = "Server API non in linea";
+                document.getElementById("health-pulse").style.backgroundColor = "var(--danger)";
+            }
+        }
+
+        // Salva l'associazione tra un notebook e il percorso selezionato
+        async function saveNotebookMapping(notebook, path, showToast = false) {
+            try {
+                const response = await fetch(`${API_URL}/mapping`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notebook: notebook, path: path })
+                });
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                
+                folderMappings[notebook] = path;
+                if (showToast) {
+                    console.log(`[Agente AI] Mappatura salvata per ${notebook}: ${path}`);
+                }
+            } catch (err) {
+                console.error("Errore nel salvataggio della mappatura:", err);
+            }
+        }
+
+        // Aggiorna la cartella genitore di ricerca su iCloud
+        async function updateParentSearchDir() {
+            const dirInput = document.getElementById("parent-search-dir").value.trim();
+            if (!dirInput) {
+                alert("Per favore, inserisci un percorso valido.");
+                return;
+            }
+            
+            toggleLoader(true);
+            try {
+                const response = await fetch(`${API_URL}/export_paths?parent_search_dir=${encodeURIComponent(dirInput)}`);
+                const data = await response.json();
+                
+                if (data.error) throw new Error(data.error);
+                
+                availablePaths = data.paths || [];
+                folderMappings = data.mappings || {};
+                currentParentSearchDir = data.parent_search_dir;
+                
+                alert("Cartelle iCloud scansionate e aggiornate con successo!");
+                
+                fetchNotebooks();
+                fetchSystemStatus();
+            } catch (err) {
+                alert(`Errore nell'aggiornamento del percorso iCloud: ${err.message}`);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Apre il dialogo nativo macOS Finder per selezionare manualmente qualsiasi cartella
+        async function browseNativeFolder(notebook) {
+            toggleLoader(true);
+            try {
+                const response = await fetch(`${API_URL}/browse`, {
+                    method: "POST"
+                });
+                const data = await response.json();
+                
+                if (data.error) throw new Error(data.error);
+                
+                if (data.success && data.path) {
+                    const chosenPath = data.path;
+                    const select = document.getElementById(`export-path-${notebook}`);
+                    
+                    if (select) {
+                        // Verifica se il percorso esiste già nelle opzioni del dropdown
+                        let exists = false;
+                        for (let i = 0; i < select.options.length; i++) {
+                            if (select.options[i].value === chosenPath) {
+                                select.selectedIndex = i;
+                                exists = true;
+                                break;
+                            }
+                        }
+                        
+                        // Se non esiste, crea una nuova opzione personalizzata
+                        if (!exists) {
+                            const opt = document.createElement("option");
+                            opt.value = chosenPath;
+                            const parts = chosenPath.split("/");
+                            const displayLabel = parts[parts.length - 1] || chosenPath;
+                            opt.text = `${displayLabel} (Personalizzata)`;
+                            select.insertBefore(opt, select.lastElementChild);
+                            select.value = chosenPath;
+                        }
+                    }
+                    
+                    // Salva la mappatura immediatamente
+                    await saveNotebookMapping(notebook, chosenPath, true);
+                    alert(`Mappatura salvata con successo alla cartella: \n${chosenPath}`);
+                    
+                    // Aggiorna lo stato generale per i contatori
+                    fetchSystemStatus();
+                } else if (data.cancelled) {
+                    console.log("[Agente AI] Selezione cartella annullata.");
+                }
+            } catch (err) {
+                alert(`Errore nella selezione della cartella: ${err.message}`);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Calcola l'ultima data di importazione in formato umanizzato (Oggi, Ieri, L'altro ieri, o data)
+        function formatLastImportDate(mtime) {
+            if (!mtime) return "N/A";
+            
+            const importDate = new Date(mtime * 1000);
+            const today = new Date();
+            
+            // Imposta a mezzanotte per confrontare solo i giorni di calendario
+            const d1 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const d2 = new Date(importDate.getFullYear(), importDate.getMonth(), importDate.getDate());
+            
+            const diffTime = d1 - d2;
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 0) {
+                return "Oggi";
+            } else if (diffDays === 1) {
+                return "Ieri";
+            } else if (diffDays === 2) {
+                return "L'altro ieri";
+            } else {
+                const months = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
+                return `il ${importDate.getDate()} ${months[importDate.getMonth()]}`;
+            }
+        }
+
+        // Recupera l'elenco dei notebook e popola i dropdown
+        async function fetchNotebooks() {
+            try {
+                // 1. Carica i percorsi disponibili e le mappature dal server
+                try {
+                    const pathsRes = await fetch(`${API_URL}/export_paths`);
+                    const pathsData = await pathsRes.json();
+                    availablePaths = pathsData.paths || [];
+                    folderMappings = pathsData.mappings || {};
+                    currentParentSearchDir = pathsData.parent_search_dir || "";
+                    
+                    // Popola l'input di ricerca iCloud
+                    const parentInput = document.getElementById("parent-search-dir");
+                    if (parentInput && currentParentSearchDir) {
+                        parentInput.value = currentParentSearchDir;
+                    }
+                } catch (e) {
+                    console.error("Errore nel caricamento dei percorsi:", e);
+                }
+
+                // 2. Carica la lista dei notebook
+                const response = await fetch(`${API_URL}/notebooks`);
+                const notebooks = await response.json();
+                
+                const container = document.getElementById("notebook-grid-container");
+                container.innerHTML = "";
+
+                if (notebooks.length === 0) {
+                    container.innerHTML = `<p style="grid-column: 1/-1; color: var(--text-muted); text-align: center; padding: 40px 0; font-size: 0.9rem;">Nessun quaderno .goodnotes o .zip rilevato nella tua cartella iCloud.</p>`;
+                    return;
+                }
+
+                notebooks.forEach(nb => {
+                    const card = document.createElement("div");
+                    card.className = "notebook-card";
+                    
+                    // Controlla se c'è una mappatura salvata, altrimenti tenta accoppiamento intelligente
+                    const savedPath = folderMappings[nb.name];
+                    let selectedPath = savedPath || "";
+                    
+                    if (!selectedPath && availablePaths.length > 0) {
+                        // Cerca un match case-insensitive nelle cartelle reali di iCloud
+                        const match = availablePaths.find(path => {
+                            const parts = path.split("/");
+                            const folderName = parts[parts.length - 1].toLowerCase();
+                            const nbName = nb.name.toLowerCase();
+                            return folderName === nbName || folderName === `${nbName}_audio`;
+                        });
+                        if (match) {
+                            selectedPath = match;
+                            // Salva istantaneamente e silenziosamente
+                            saveNotebookMapping(nb.name, match, false);
+                        }
+                    }
+                    
+                    // Costruisce le opzioni del menu a tendina
+                    let dropdownOptions = "";
+                    
+                    if (!selectedPath) {
+                        dropdownOptions += `<option value="" disabled selected>-- Seleziona cartella iCloud --</option>`;
+                    }
+                    
+                    // Raccoglie tutti i percorsi univoci (escludendo fallback locali di Success se non espressamente mappati)
+                    let notebookPaths = new Set(availablePaths);
+                    if (selectedPath) notebookPaths.add(selectedPath);
+                    
+                    // Converte in array ordinato
+                    const sortedNotebookPaths = Array.from(notebookPaths).sort();
+                    
+                    sortedNotebookPaths.forEach(path => {
+                        const isSelected = path === selectedPath ? "selected" : "";
+                        // Estrae il nome cartella finale leggibile per il dropdown
+                        const parts = path.split("/");
+                        const displayLabel = parts[parts.length - 1] || path;
+                        dropdownOptions += `<option value="${path}" ${isSelected}>${displayLabel}</option>`;
+                    });
+                    
+                    dropdownOptions += `<option value="__NEW__" style="color: var(--primary); font-weight: 600;">+ Crea Nuova Cartella...</option>`;
+
+                    card.innerHTML = `
+                        <div class="notebook-header">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span class="notebook-badge" style="margin-bottom: 0;">${nb.type}</span>
+                                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">🕒 Modificato: <strong style="color: var(--primary);">${formatLastImportDate(nb.mtime)}</strong></span>
+                            </div>
+                            <h3>${nb.name}</h3>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 2px; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${nb.relative_path}">📂 ${nb.relative_path}</span>
+                            <span class="notebook-size">Dimensione: ${nb.size_mb} MB</span>
+                            <div class="form-group" style="margin-top: 15px; margin-bottom: 0;">
+                                <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Cartella Destinazione (iCloud)</label>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 5px;">
+                                    <select id="export-path-${nb.name}" onchange="handlePathDropdownChange('${nb.name}', this)" style="flex: 1; padding: 8px 12px; font-size: 0.8rem; background: #F5F5F7; border: 1px solid rgba(0,0,0,0.08); border-radius: 10px; color: var(--text-main); width: 100%;">
+                                        ${dropdownOptions}
+                                    </select>
+                                    <button class="btn btn-secondary" onclick="browseNativeFolder('${nb.name}')" style="width: auto; padding: 8px 12px; font-size: 0.8rem; flex-shrink: 0; box-shadow: none; margin: 0; background: #E8E8ED; border: none;">📁 Sfoglia</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="notebook-actions">
+                            <button class="btn btn-secondary" onclick="analyzeNotebook('${nb.name}')">Analizza</button>
+                            <button class="btn" onclick="exportNotebook('${nb.name}')">Esporta M4A</button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Errore fetch notebooks:", err);
+            }
+        }
+
+        // Salva la chiave API nel file .env
+        async function saveApiKey() {
+            const keyInput = document.getElementById("api-key").value.trim();
+            if (!keyInput) {
+                alert("Per favore, inserisci una chiave API valida.");
+                return;
+            }
+
+            toggleLoader(true);
+            try {
+                const response = await fetch(`${API_URL}/config`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ api_key: keyInput })
+                });
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                alert(data.message);
+                document.getElementById("api-key").value = "";
+                fetchSystemStatus();
+            } catch (err) {
+                alert(`Errore nel salvataggio della chiave: ${err.message}`);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Chiude i cassetti
+        function closeDrawer(id) {
+            document.getElementById(id).style.display = "none";
+        }
+
+        // Riproduce una singola traccia audio
+        function playAudioTrack(notebook, uuid, cleanTitle) {
+            const player = document.getElementById("floating-audio-player");
+            const titleEl = document.getElementById("player-track-title");
+            const notebookEl = document.getElementById("player-track-notebook");
+            const audioEl = document.getElementById("audio-element");
+            
+            titleEl.innerText = cleanTitle;
+            notebookEl.innerText = `Quaderno: ${notebook}`;
+            
+            // Imposta sorgente dell'audio
+            audioEl.src = `${API_URL}/audio/play?notebook=${encodeURIComponent(notebook)}&uuid=${encodeURIComponent(uuid)}`;
+            
+            // Fai scorrere in alto il player
+            player.style.bottom = "25px";
+            
+            // Avvia la riproduzione
+            audioEl.play().catch(err => {
+                console.log("Riproduzione avviata (richiede click dell'utente in base al browser):", err);
             });
+        }
+        
+        function closeAudioPlayer() {
+            const player = document.getElementById("floating-audio-player");
+            const audioEl = document.getElementById("audio-element");
+            
+            audioEl.pause();
+            audioEl.src = "";
+            player.style.bottom = "-100px";
+        }
+
+        // Analizza le tracce audio di un notebook
+        async function analyzeNotebook(name) {
+            toggleLoader(true);
+            try {
+                const response = await fetch(`${API_URL}/analyze`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notebook: name })
+                });
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                // Memorizza il notebook attivo
+                activeNotebookName = name;
+
+                // Mostra il cassetto di analisi
+                const drawer = document.getElementById("analysis-drawer");
+                drawer.style.display = "block";
+                document.getElementById("analysis-title").innerText = `📊 Analisi Registrazioni: ${data.notebook} (${data.total_recordings} tracce)`;
+
+                // Resetta il check-all a true
+                const checkAll = document.getElementById("check-all");
+                if (checkAll) checkAll.checked = true;
+
+                const tableBody = document.getElementById("analysis-table-body");
+                tableBody.innerHTML = "";
+
+                if (data.recordings.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Nessuna traccia audio trovata in questo notebook.</td></tr>`;
+                } else {
+                    data.recordings.forEach(rec => {
+                        const tr = document.createElement("tr");
+                        tr.innerHTML = `
+                            <td style="text-align: center;"><input type="checkbox" class="track-checkbox" value="${rec.uuid}" checked></td>
+                            <td style="font-weight: 500;">${rec.date}</td>
+                            <td>
+                                <strong style="color: var(--primary); font-size: 0.95rem;">${rec.clean_title}</strong>
+                                <span class="original-title-muted">Cifrato originale: "${rec.raw_title}"</span>
+                            </td>
+                            <td>${rec.duration}</td>
+                            <td>${rec.size_mb} MB</td>
+                            <td style="text-align: center;">
+                                <button class="btn btn-secondary" onclick="playAudioTrack('${name.replace(/'/g, "\\'")}', '${rec.uuid}', '${rec.clean_title.replace(/'/g, "\\'")}')" style="width: auto; padding: 6px 12px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px; margin: 0; box-shadow: none;">
+                                    <span>▶️</span> Ascolta
+                                </button>
+                            </td>
+                            <td><span class="badge-status-present">${rec.status}</span></td>
+                        `;
+                        tableBody.appendChild(tr);
+                    });
+                }
+                
+                // Scorri fino al cassetto
+                drawer.scrollIntoView({ behavior: "smooth" });
+            } catch (err) {
+                alert(`Errore durante l'analisi del notebook: ${err.message}`);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Seleziona/deseleziona tutte le checkbox delle tracce
+        function toggleCheckAll(source) {
+            const checkboxes = document.querySelectorAll(".track-checkbox");
+            checkboxes.forEach(cb => cb.checked = source.checked);
+        }
+
+        // Esporta le tracce audio del notebook
+        async function exportNotebook(name) {
+            const selectPath = document.getElementById(`export-path-${name}`).value;
+            if (!selectPath) {
+                alert("Per favore, seleziona una cartella di destinazione prima di esportare.");
+                return;
+            }
+
+            toggleLoader(true);
+            const consoleDrawer = document.getElementById("export-drawer");
+            const consoleOutput = document.getElementById("terminal-output");
+            
+            consoleDrawer.style.display = "block";
+            consoleOutput.innerText = `[AVVIO AGENTE AI - ${new Date().toLocaleTimeString()}]\nAvvio processo di decodifica ed esportazione per '${name}'...\n`;
+            consoleDrawer.scrollIntoView({ behavior: "smooth" });
+
+            try {
+                const response = await fetch(`${API_URL}/export`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notebook: name, format: "m4a", custom_export_dir: selectPath })
+                });
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                consoleOutput.innerText += `\n[PROCESSO COMPLETATO CON SUCCESSO]\n\n${data.result}`;
+                consoleOutput.style.color = "var(--text-main)";
+                
+                // Aggiorna lo stato generale
+                fetchSystemStatus();
+            } catch (err) {
+                consoleOutput.innerText += `\n[x] ERRORE DI ESPORTAZIONE:\n${err.message}`;
+                consoleOutput.style.color = "var(--danger)";
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Esporta solo le tracce audio selezionate con le checkbox
+        async function exportSelectedTracks() {
+            if (!activeNotebookName) return;
+
+            const selectedUuids = [];
+            document.querySelectorAll(".track-checkbox:checked").forEach(cb => {
+                selectedUuids.push(cb.value);
+            });
+
+            if (selectedUuids.length === 0) {
+                alert("Seleziona almeno una traccia audio da esportare.");
+                return;
+            }
+
+            const selectPath = document.getElementById(`export-path-${activeNotebookName}`).value;
+            if (!selectPath) {
+                alert("Per favore, seleziona una cartella di destinazione prima di esportare.");
+                return;
+            }
+
+            toggleLoader(true);
+            const consoleDrawer = document.getElementById("export-drawer");
+            const consoleOutput = document.getElementById("terminal-output");
+            
+            consoleDrawer.style.display = "block";
+            consoleOutput.innerText = `[AVVIO AGENTE AI SELETTIVO - ${new Date().toLocaleTimeString()}]\nEsportazione programmata di ${selectedUuids.length} registrazioni per '${activeNotebookName}'...\n`;
+            consoleDrawer.scrollIntoView({ behavior: "smooth" });
+
+            try {
+                const response = await fetch(`${API_URL}/export`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        notebook: activeNotebookName, 
+                        format: "m4a", 
+                        custom_export_dir: selectPath,
+                        selected_uuids: selectedUuids
+                    })
+                });
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                consoleOutput.innerText += `\n[PROCESSO SELETTIVO COMPLETATO DA AGENTE AI]\n\n${data.result}`;
+                
+                // Aggiorna lo stato generale
+                fetchSystemStatus();
+            } catch (err) {
+                consoleOutput.innerText += `\n[x] ERRORE DI ESPORTAZIONE:\n${err.message}`;
+                consoleOutput.style.color = "var(--danger)";
+            } finally {
+                toggleLoader(false);
+            }
+        }
+
+        // Gestisce la creazione di una nuova cartella se selezionata dal menu a tendina
+        async function handlePathDropdownChange(notebook, select) {
+            const val = select.value;
+            
+            if (val === "__NEW__") {
+                const newFolder = prompt(`Inserisci il nome della nuova cartella/materia da creare su iCloud:\n(Verrà creata dentro: ${currentParentSearchDir})`);
+                
+                if (newFolder && newFolder.trim()) {
+                    const cleanFolderName = newFolder.trim().replace(/[\/\\:\*\?"<>\|]/g, '-');
+                    toggleLoader(true);
+                    
+                    try {
+                        const response = await fetch(`${API_URL}/create_folder`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                parent_dir: currentParentSearchDir,
+                                folder_name: cleanFolderName
+                            })
+                        });
+                        const data = await response.json();
+                        if (data.error) throw new Error(data.error);
+                        
+                        const newPath = data.folder_path;
+                        
+                        // Crea la nuova opzione e la seleziona
+                        const opt = document.createElement("option");
+                        opt.value = newPath;
+                        opt.text = `${cleanFolderName} (Nuova)`;
+                        select.insertBefore(opt, select.lastElementChild);
+                        select.value = newPath;
+                        
+                        // Salva e mappa immediatamente la nuova cartella
+                        await saveNotebookMapping(notebook, newPath, true);
+                        
+                        alert(`Cartella '${cleanFolderName}' creata e mappata correttamente su iCloud Drive!`);
+                        
+                        // Aggiorna lo stato generale per ricalcolare i contatori
+                        fetchSystemStatus();
+                    } catch (err) {
+                        alert(`Errore durante la creazione della cartella: ${err.message}`);
+                        select.selectedIndex = 0; // ripristina la prima opzione
+                    } finally {
+                        toggleLoader(false);
+                    }
+                } else {
+                    select.selectedIndex = 0; // ripristina
+                }
+            } else if (val) {
+                // Se ha selezionato una cartella valida normale, la salviamo istantaneamente
+                await saveNotebookMapping(notebook, val, true);
+            }
         }
     </script>
 </body>

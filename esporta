@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "[*] Seleziona la cartella dove salvare gli audio per questa materia..."
+pickFolder
+python3 ~/Documents/decode_goodnotes_pb.py .
