@@ -18,20 +18,48 @@ const errorAlert = document.getElementById('error-alert');
 const errorMessage = document.getElementById('error-message');
 
 // Stato dell'applicazione in memoria
-// Stato dell'applicazione in memoria
 let activeNotebookData = null;
-let currentLang = 'en';
+let currentLang = 'it';
+let currentAudio = null;
+let currentPlayingIndex = null;
 
-// parole chiave italiane per valutare l'accuratezza dei titoli decrittati
-const CLEAN_KEYWORDS = [
-    "polmoni", "inizio", "patologie", "ostruzione", "restrizione", "infettive", "covid", 
-    "tumori", "malattie", "interstiziali", "pleura", "mal", "cardiopatie", "cong", 
-    "aneurismi", "arteriti", "necrosi", "inf", "tumori", "vescica", "cistiti", 
-    "aterosclerosi", "prostata", "ipertensione", "cardiaco", "aorta", "stenosi",
-    "insufficienza", "protesi", "valvolari", "asma", "ecg", "fisiologia", "respiratoria",
-    "trombosi", "venosa", "profonda", "dissecazione", "ischemia", "acuta", "arto",
-    "inf", "trapianto", "terapia", "dispnea", "dispositivi", "semeiotica", "anatomia"
-];
+// ================================================================================
+// COSTANTI, ACRONIMI E TABELLE DI RICONOSCIMENTO LINGUISTICO
+// ================================================================================
+
+// Acronimi medici da preservare rigorosamente in MAIUSCOLO
+const WHITELIST_ACRONYMS = new Set([
+    "ECG", "BPCO", "SCA", "RCU", "CEC", "PAD", "RR", "IFP"
+]);
+
+// Prefissi di materia noti (con due punti)
+const SUBJECT_PREFIXES = new Set([
+    "CV:", "CC:", "CT:", "SMED:", "ANTROPO:", "POLM:"
+]);
+
+// Vocali accentate italiane che devono essere RIGOROSAMENTE preservate da qualsiasi shift
+const ITALIAN_ACCENTED_CHARS = new Set(["à", "è", "é", "ì", "ò", "ù", "À", "È", "É", "Ì", "Ò", "Ù"]);
+
+// Parole e radici italiane comuni per determinare se il testo grezzo è già in chiaro
+const ITALIAN_STOPWORDS = new Set([
+    "di", "del", "della", "delle", "dei", "degli", "il", "lo", "la", "i", "gli", "le",
+    "un", "uno", "una", "e", "ed", "in", "su", "per", "con", "tra", "fra", "da", "dal",
+    "dalla", "non", "intro", "comunicazione", "medico", "paziente", "lezione", "corso",
+    "esame", "clinica", "clinico", "sindrome", "patologia", "patologie", "arteriti",
+    "aneurismi", "tiroide", "paratiroide", "cuore", "polmone", "polmonare", "polmonari",
+    "mortalita", "mortalità", "storia", "antica", "grecia", "morte", "inizio"
+]);
+
+// Parole bersaglio per confermare l'effettiva cifratura Cesare (lunghezza >= 5)
+const CAESAR_TARGET_KEYWORDS = new Set([
+    "aterosclerosi", "necrosi", "tumori", "vescica", "cistiti", "patologie",
+    "polmonari", "ostruzione", "restrizione", "infettive", "cardiopatie",
+    "infarto", "angina", "prostata", "arteriti", "aneurismi", "tiroide",
+    "paratiroide", "ipertensione"
+]);
+
+// Costante offset secondi tra 1 gennaio 1904 (Mac epoch) e 1 gennaio 1970 (Unix epoch)
+const MAC_TO_UNIX_OFFSET = 2082844800;
 
 // Dizionario delle traduzioni per internazionalizzazione (IT / EN)
 const TRANSLATIONS = {
@@ -63,7 +91,9 @@ const TRANSLATIONS = {
         statsSuffix: "registrazioni audio estratte (duplicati rimossi)",
         footerText: "Disegnato e sviluppato in locale al 100% offline. Sincronizzazione automatica con iCloud attiva.",
         downloadSingle: "Scarica traccia singola",
-        downloadingSingle: "Download in corso: "
+        downloadingSingle: "Download in corso: ",
+        playAudio: "Ascolta anteprima",
+        pauseAudio: "Pausa anteprima"
     },
     en: {
         title: "GoodNotes Audio Exporter",
@@ -93,7 +123,9 @@ const TRANSLATIONS = {
         statsSuffix: "audio recordings extracted (duplicates removed)",
         footerText: "Designed and developed 100% locally offline. Automatic iCloud sync active.",
         downloadSingle: "Download single track",
-        downloadingSingle: "Downloading: "
+        downloadingSingle: "Downloading: ",
+        playAudio: "Play preview",
+        pauseAudio: "Pause preview"
     }
 };
 
@@ -101,21 +133,17 @@ function applyLanguage(langCode) {
     currentLang = langCode;
     const l = TRANSLATIONS[langCode];
     
-    // Cambia pulsante attivo
     document.getElementById('lang-btn-it').classList.toggle('active', langCode === 'it');
     document.getElementById('lang-btn-en').classList.toggle('active', langCode === 'en');
     
-    // Testi statici
     document.getElementById('app-title').innerText = l.title;
     document.getElementById('app-subtitle').innerText = l.subtitle;
     
-    // Dropzone
     const dropzoneTitle = dropZone.querySelector('h3');
     const dropzoneSubtitle = dropZone.querySelector('p');
     if (dropzoneTitle) dropzoneTitle.innerText = l.dropzoneTitle;
     if (dropzoneSubtitle) dropzoneSubtitle.innerText = l.dropzoneSubtitle;
     
-    // Pulsanti (se visibili)
     const downloadZipBtn = document.getElementById('download-all-btn');
     const downloadM4aBtn = document.getElementById('download-files-btn');
     
@@ -133,35 +161,454 @@ function applyLanguage(langCode) {
         downloadM4aBtn.appendChild(document.createTextNode(' ' + l.filesButton));
     }
     
-    // Footer
     const footer = document.querySelector('.app-footer p');
     if (footer) footer.innerText = l.footerText;
     
-    // Aggiorna elenco tracce se presenti
     if (activeNotebookData) {
         renderResults();
     }
 }
 
 // ================================================================================
-// DECODIFICATORE PROTOBUF BINARIO ULTRA-LEGGERO E NATIVO
+// TABELLA DI TRADUZIONE SIMBOLI MATEMATICI UNICODE -> ASCII
+// ================================================================================
+
+function buildMathTranslationTable() {
+    const table = new Map();
+
+    for (let i = 0; i < 26; i++) {
+        const upper = String.fromCharCode(65 + i);
+        const lower = String.fromCharCode(97 + i);
+
+        // Math Bold Uppercase & Lowercase
+        table.set(0x1D400 + i, upper);
+        table.set(0x1D41A + i, lower);
+
+        // Math Italic Uppercase & Lowercase (con gap Planck constant 0x210E per 'h')
+        table.set(0x1D434 + i, upper);
+        if (i === 7) {
+            table.set(0x210E, 'h');
+        } else {
+            table.set(0x1D44E + i, lower);
+        }
+
+        // Math Bold Italic
+        table.set(0x1D468 + i, upper);
+        table.set(0x1D482 + i, lower);
+
+        // Math Sans-Serif Regular
+        table.set(0x1D5A0 + i, upper);
+        table.set(0x1D5BA + i, lower);
+
+        // Math Sans-Serif Bold
+        table.set(0x1D5D4 + i, upper);
+        table.set(0x1D5EE + i, lower);
+
+        // Math Sans-Serif Italic
+        table.set(0x1D608 + i, upper);
+        table.set(0x1D622 + i, lower);
+
+        // Math Sans-Serif Bold Italic
+        table.set(0x1D63C + i, upper);
+        table.set(0x1D656 + i, lower);
+
+        // Math Monospace
+        table.set(0x1D670 + i, upper);
+        table.set(0x1D68A + i, lower);
+    }
+
+    // Dotless i e dotless j
+    table.set(0x1D6A4, 'i');
+    table.set(0x1D6A5, 'j');
+
+    // Cifre matematiche Unicode (0-9)
+    for (let i = 0; i < 10; i++) {
+        const d = String(i);
+        table.set(0x1D7CE + i, d); // Bold
+        table.set(0x1D7D8 + i, d); // Double-struck
+        table.set(0x1D7E2 + i, d); // Sans-serif
+        table.set(0x1D7EC + i, d); // Sans-serif bold
+        table.set(0x1D7F6 + i, d); // Monospace
+    }
+
+    return table;
+}
+
+const MATH_TRANSLATION_TABLE = buildMathTranslationTable();
+
+function normalizeUnicode(text) {
+    if (!text) return "";
+    return text.normalize("NFC");
+}
+
+function normalizeUnicodeMath(text) {
+    if (!text) return "";
+    const norm = normalizeUnicode(text);
+    const out = [];
+    for (const char of norm) {
+        const cp = char.codePointAt(0);
+        if (MATH_TRANSLATION_TABLE.has(cp)) {
+            out.push(MATH_TRANSLATION_TABLE.get(cp));
+        } else {
+            out.push(char);
+        }
+    }
+    return out.join("");
+}
+
+// ================================================================================
+// DECIFRATURA CESARE SELETTIVA E PROTEZIONE ACCENTI
+// ================================================================================
+
+function decryptCaesar(text) {
+    const out = [];
+    const isAllUpper = text === text.toUpperCase() && /[A-Z]/.test(text);
+
+    for (let idx = 0; idx < text.length; idx++) {
+        const c = text[idx];
+
+        // PROTEZIONE TASSATIVA: caratteri accentati italiani e non-ASCII rimangono intatti
+        if (ITALIAN_ACCENTED_CHARS.has(c) || !(/[a-zA-Z]/.test(c))) {
+            if (/[0-9]/.test(c)) {
+                const decDig = (c.charCodeAt(0) - 48 - 6 + 20) % 10;
+                out.push(String.fromCharCode(48 + decDig));
+            } else {
+                out.push(c);
+            }
+            continue;
+        }
+
+        const isUpper = (c >= 'A' && c <= 'Z');
+        const cIdx = c.charCodeAt(0) - (isUpper ? 65 : 97);
+
+        if (isAllUpper) {
+            const pIdx = (cIdx - 4 + 26) % 26;
+            out.push(String.fromCharCode(65 + pIdx));
+        } else {
+            if (idx === 0 && isUpper) {
+                const pIdx = (cIdx - 4 + 26) % 26;
+                out.push(String.fromCharCode(65 + pIdx));
+            } else {
+                const pIdx = (cIdx + 18 + 26) % 26;
+                out.push(String.fromCharCode(97 + pIdx));
+            }
+        }
+    }
+    return out.join("");
+}
+
+function isCaesarEncrypted(text) {
+    if (!text || text.trim().length < 4) return false;
+
+    const rawClean = normalizeUnicodeMath(text).toLowerCase();
+    const words = rawClean.match(/[a-zA-Zàèéìòù]+/g) || [];
+    if (words.length === 0) return false;
+
+    // 1. Se il testo grezzo contiene già stop-word o termini italiani chiaramente leggibili, NON è cifrato!
+    const italianClearMatches = words.filter(w => ITALIAN_STOPWORDS.has(w)).length;
+    if (italianClearMatches >= 1 && words.length > 1) {
+        return false;
+    }
+
+    // 2. Se una delle parole grezze coincide esattamente con parole lunghe italiane, è in chiaro
+    if (words.some(w => CAESAR_TARGET_KEYWORDS.has(w))) {
+        return false;
+    }
+
+    // 3. Decifra il candidato e verifica se emergono parole bersaglio italiane reali
+    const dec = decryptCaesar(text).toLowerCase();
+    const decWords = new Set(dec.match(/[a-zA-Zàèéìòù]+/g) || []);
+
+    for (const target of CAESAR_TARGET_KEYWORDS) {
+        if (decWords.has(target)) return true;
+    }
+
+    // 4. Casi specifici storici di cifratura documentati
+    if (dec.includes("tumtiri") || dec.includes("tum tir") || dec.includes("ipert polm")) {
+        return true;
+    }
+
+    return false;
+}
+
+// ================================================================================
+// FORMATTAZIONE CASING E COSTRUZIONE NOMI FILE
+// ================================================================================
+
+function formatTitleCasing(text) {
+    if (!text) return "";
+
+    const tokens = text.split(/\s+/);
+    const formatted = [];
+    const minorWords = new Set(["di", "del", "della", "delle", "dei", "degli", "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "ed", "in", "su", "per", "con", "tra", "fra", "da", "a"]);
+    const romanNumerals = new Set(["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]);
+
+    for (let idx = 0; idx < tokens.length; idx++) {
+        const rawTok = tokens[idx];
+        const match = rawTok.match(/^([^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]*)(.*?)([^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]*)$/);
+        if (!match) {
+            formatted.push(rawTok);
+            continue;
+        }
+
+        const prefix = match[1];
+        const word = match[2];
+        const suffix = match[3];
+
+        if (!word) {
+            formatted.push(rawTok);
+            continue;
+        }
+
+        const wordUp = word.toUpperCase();
+        let formattedWord = "";
+
+        // Caso 1: Acronimo medico o prefisso
+        if (WHITELIST_ACRONYMS.has(wordUp) || SUBJECT_PREFIXES.has(wordUp + suffix)) {
+            formattedWord = wordUp;
+        }
+        // Caso 2: Preposizione o congiunzione minore non all'inizio
+        else if (idx > 0 && minorWords.has(word.toLowerCase()) && !formatted[formatted.length - 1].endsWith(':')) {
+            formattedWord = word.toLowerCase();
+        }
+        // Caso 3: Numero romano legittimo (I - XII)
+        else if (romanNumerals.has(wordUp)) {
+            formattedWord = wordUp;
+        }
+        // Caso 4: Parola standard -> Capitalize (con supporto accenti)
+        else {
+            formattedWord = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        }
+
+        formatted.push(`${prefix}${formattedWord}${suffix}`);
+    }
+
+    return formatted.join(" ");
+}
+
+function cleanTitle(title) {
+    if (!title || typeof title !== 'string') {
+        return currentLang === 'it' ? "Registrazione Senza Nome" : "Unnamed Recording";
+    }
+
+    let nameClean = normalizeUnicodeMath(title);
+
+    // Decifratura Cesare controllata
+    if (isCaesarEncrypted(nameClean)) {
+        nameClean = decryptCaesar(nameClean);
+    }
+
+    // Correzioni ortografiche note
+    const lowerName = nameClean.toLowerCase();
+    if (lowerName.includes("anuerismi")) {
+        nameClean = nameClean.replace(/anuerismi/gi, 'aneurismi');
+    }
+    if (lowerName.includes("tumtiri") || lowerName.includes("tum tir e paratir")) {
+        nameClean = "Tum tir e paratir";
+    } else if (lowerName.includes("mxmlb")) {
+        nameClean = "Ipert polm, tum card";
+    }
+
+    // Sanitizzazione caratteri vietati nei filesystem (tranne i due punti dei prefissi gestiti in export)
+    nameClean = nameClean.replace(/[\/\\\*\?"<>\|]/g, '-');
+
+    // Casing intelligente
+    nameClean = formatTitleCasing(nameClean);
+
+    // Pulizia punteggiatura orfana finale
+    nameClean = nameClean.replace(/[\s,:;\.\-_]+$/, '').trim();
+
+    return nameClean || (currentLang === 'it' ? "Registrazione Senza Nome" : "Unnamed Recording");
+}
+
+function buildExportFilename(rawTitle, datePrefix = null, ext = "m4a") {
+    const titleClean = cleanTitle(rawTitle);
+
+    // Nel filesystem i due punti ':' sono vietati su Windows e problematici su macOS
+    // Trasforma 'CV: Aneurismi' in 'CV - Aneurismi'
+    let fsTitle = titleClean.replace(/[:\/\\*\?"<>\|]/g, ' - ');
+    fsTitle = fsTitle.replace(/\s*-\s*-\s*/g, ' - ');
+    fsTitle = fsTitle.replace(/\s+/g, ' ').replace(/^[\s\-]+|[\s\-]+$/g, '');
+
+    const extClean = ext.replace(/^\.+/, '').toLowerCase();
+    if (datePrefix && datePrefix !== "00_00") {
+        return `${datePrefix} - ${fsTitle}.${extClean}`;
+    }
+    return `${fsTitle}.${extClean}`;
+}
+
+function getFilenameScore(filename) {
+    let score = 0;
+    const nameLower = filename.toLowerCase();
+    for (const kw of CAESAR_TARGET_KEYWORDS) {
+        if (nameLower.includes(kw)) score += 15;
+    }
+    for (const kw of ITALIAN_STOPWORDS) {
+        if (nameLower.includes(kw)) score += 5;
+    }
+    for (const acr of WHITELIST_ACRONYMS) {
+        if (filename.includes(acr)) score += 20;
+    }
+    for (const gibberish of ["xwtuwvq", "izbmzqbq", "kizlqwxibqm", "uitibbqm", "qvb", "xtmczi", "jkm", "jiri", "leicica"]) {
+        if (nameLower.includes(gibberish)) score -= 50;
+    }
+    return score;
+}
+
+// ================================================================================
+// PARSING MP4 ATOMO MVHD (HEAD & TAIL) E FORMATTAZIONE DURATE
+// ================================================================================
+
+function formatDurationSeconds(secondsTotal) {
+    if (secondsTotal === null || secondsTotal === undefined || secondsTotal <= 0) {
+        return "N/A";
+    }
+    const sec = Math.round(secondsTotal);
+    const hours = Math.floor(sec / 3600);
+    const minutes = Math.floor((sec % 3600) / 60);
+    const seconds = sec % 60;
+    if (hours > 0) {
+        return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+    }
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+}
+
+function formatDurationNs(nanosecs) {
+    if (typeof nanosecs !== 'number' || nanosecs <= 0) return null;
+    const totalSeconds = Math.floor(nanosecs / 1000000000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+        return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+    }
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+}
+
+function parseMvhdBytes(data) {
+    const result = {
+        creationDate: null,
+        unixTimestamp: null,
+        timescale: null,
+        durationUnits: null,
+        durationSeconds: null,
+        durationFormatted: "N/A"
+    };
+
+    if (!data || data.length < 24) return result;
+
+    // Cerca 'mvhd' (0x6d, 0x76, 0x68, 0x64)
+    let idx = -1;
+    for (let i = 0; i <= data.length - 8; i++) {
+        if (data[i] === 0x6d && data[i + 1] === 0x76 && data[i + 2] === 0x68 && data[i + 3] === 0x64) {
+            idx = i;
+            break;
+        }
+    }
+
+    if (idx === -1 || idx + 8 > data.length) return result;
+
+    const version = data[idx + 4];
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+
+    let creationTimeRaw = 0;
+    let timescale = 0;
+    let duration = 0;
+
+    try {
+        if (version === 0) {
+            if (idx + 24 > data.length) return result;
+            creationTimeRaw = view.getUint32(idx + 8, false);
+            timescale = view.getUint32(idx + 16, false);
+            duration = view.getUint32(idx + 20, false);
+        } else if (version === 1) {
+            if (idx + 36 > data.length) return result;
+            const highC = view.getUint32(idx + 8, false);
+            const lowC = view.getUint32(idx + 12, false);
+            creationTimeRaw = highC * 4294967296 + lowC;
+            timescale = view.getUint32(idx + 24, false);
+            const highD = view.getUint32(idx + 28, false);
+            const lowD = view.getUint32(idx + 32, false);
+            duration = highD * 4294967296 + lowD;
+        } else {
+            return result;
+        }
+
+        if (creationTimeRaw > MAC_TO_UNIX_OFFSET) {
+            const unixTime = creationTimeRaw - MAC_TO_UNIX_OFFSET;
+            // Sanity check: compreso tra 2000 e 2040
+            if (unixTime >= 946684800 && unixTime <= 2208988800) {
+                result.unixTimestamp = unixTime;
+                result.creationDate = new Date(unixTime * 1000);
+            }
+        }
+
+        if (timescale > 0) {
+            result.timescale = timescale;
+            result.durationUnits = duration;
+            result.durationSeconds = duration / timescale;
+            result.durationFormatted = formatDurationSeconds(result.durationSeconds);
+        }
+    } catch (err) {
+        // Nessun throw su frammenti binari non standard
+    }
+
+    return result;
+}
+
+function parseMvhdFromBytes(dataBytes, maxHeadBytes = 262144) {
+    // 1. Prova nei primi 256 KB (head)
+    const headLen = Math.min(dataBytes.length, maxHeadBytes);
+    const headData = dataBytes.subarray(0, headLen);
+    let res = parseMvhdBytes(headData);
+    if (res.creationDate && res.durationFormatted !== "N/A") {
+        return res;
+    }
+
+    // 2. Se non trovato o mancano info, cerca negli ultimi 1.5 MB (tail)
+    const tailLen = Math.min(dataBytes.length, 1572864);
+    if (tailLen > 0 && dataBytes.length > maxHeadBytes) {
+        const tailData = dataBytes.subarray(dataBytes.length - tailLen);
+        const resTail = parseMvhdBytes(tailData);
+        if (resTail.creationDate || resTail.durationFormatted !== "N/A") {
+            if (!res.creationDate && resTail.creationDate) {
+                res.creationDate = resTail.creationDate;
+                res.unixTimestamp = resTail.unixTimestamp;
+            }
+            if (res.durationFormatted === "N/A" && resTail.durationFormatted !== "N/A") {
+                res.timescale = resTail.timescale;
+                res.durationUnits = resTail.durationUnits;
+                res.durationSeconds = resTail.durationSeconds;
+                res.durationFormatted = resTail.durationFormatted;
+            }
+        }
+    }
+
+    return res;
+}
+
+// ================================================================================
+// DECODIFICATORE PROTOBUF BINARIO
 // ================================================================================
 
 function readVarint(arr, offsetRef) {
     let value = 0;
     let multiplier = 1;
+    let shift = 0;
     while (true) {
         if (offsetRef.val >= arr.length) return null;
         let byte = arr[offsetRef.val++];
         value += (byte & 0x7f) * multiplier;
         if (!(byte & 0x80)) break;
         multiplier *= 128;
+        shift += 7;
+        if (shift > 64) return null; // Previene loop infiniti
     }
     return value;
 }
 
 function bytesToString(bytes) {
-    return new TextDecoder("utf-8").decode(bytes);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
 function decodeProtobufFields(bytes) {
@@ -229,7 +676,7 @@ function parseEventsMapping(eventsPbData) {
         try {
             const decoded = decodeProtobufFields(msgBytes);
             
-            // Messaggio 160: Associazione Sessione -> Attachment UUID
+            // Messaggio 160: Associazione Sessione -> Attachment UUID & Durata
             if (decoded[160]) {
                 const f160 = decodeProtobufFields(decoded[160]);
                 const s_id = f160[1] ? bytesToString(f160[1]).toUpperCase() : null;
@@ -239,7 +686,10 @@ function parseEventsMapping(eventsPbData) {
                 if (s_id && att_id) {
                     sessionToAttachment[s_id] = att_id;
                     if (duration_ns) {
-                        sessionToDuration[s_id] = formatDuration(duration_ns);
+                        const fmt = formatDurationNs(duration_ns);
+                        if (fmt) {
+                            sessionToDuration[s_id] = fmt;
+                        }
                     }
                 }
             }
@@ -263,174 +713,28 @@ function parseEventsMapping(eventsPbData) {
         }
     }
     
-    // Unione dei dati
+    // Unione dei dati: NESSUNA TRACCIA SCARTATA SE MANCA LA DURATA!
     const mappaAudio = {};
     for (const [s_id, att_uuid] of Object.entries(sessionToAttachment)) {
-        const title = sessionToTitle[s_id] || "";
-        const duration = sessionToDuration[s_id] || "N/A";
+        const raw_title = sessionToTitle[s_id] || "";
+        const duration = sessionToDuration[s_id] || null;
         
-        if (duration !== "N/A") {
-            mappaAudio[att_uuid] = {
-                uuid: att_uuid,
-                title: title,
-                duration: duration,
-                session_id: s_id
-            };
-        }
+        mappaAudio[att_uuid] = {
+            uuid: att_uuid,
+            raw_title: raw_title,
+            title: cleanTitle(raw_title),
+            duration: duration,
+            session_id: s_id
+        };
     }
     
     return mappaAudio;
 }
 
 // ================================================================================
-// ALGORITMI DI PULIZIA E DECRITTAZIONE
-// ================================================================================
-
-function formatDuration(nanosecs) {
-    if (typeof nanosecs !== 'number' || nanosecs <= 0) return "N/A";
-    const totalSeconds = Math.floor(nanosecs / 1000000000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
-    }
-    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-}
-
-function normalizeMathBold(text) {
-    const out = [];
-    for (const char of text) {
-        const o = char.codePointAt(0);
-        
-        // Normalizzazione font matematici in lettere standard
-        if (o >= 0x1D400 && o <= 0x1D419) out.push(String.fromCodePoint(65 + (o - 0x1D400))); // Bold A-Z
-        else if (o >= 0x1D41A && o <= 0x1D433) out.push(String.fromCodePoint(97 + (o - 0x1D41A))); // Bold a-z
-        else if (o >= 0x1D434 && o <= 0x1D44D) out.push(String.fromCodePoint(65 + (o - 0x1D434))); // Italic A-Z
-        else if (o >= 0x1D44E && o <= 0x1D467) out.push(String.fromCodePoint(97 + (o - 0x1D44E))); // Italic a-z
-        else if (o >= 0x1D468 && o <= 0x1D481) out.push(String.fromCodePoint(65 + (o - 0x1D468))); // Bold Italic A-Z
-        else if (o >= 0x1D482 && o <= 0x1D49B) out.push(String.fromCodePoint(97 + (o - 0x1D482))); // Bold Italic a-z
-        else if (o >= 0x1D5D4 && o <= 0x1D5ED) out.push(String.fromCodePoint(65 + (o - 0x1D5D4))); // Sans Bold A-Z
-        else if (o >= 0x1D5EE && o <= 0x1D607) out.push(String.fromCodePoint(97 + (o - 0x1D5EE))); // Sans Bold a-z
-        else if (o >= 0x1D7CE && o <= 0x1D7D7) out.push(String.fromCodePoint(48 + (o - 0x1D7CE))); // Bold Digits 0-9
-        else out.push(char);
-    }
-    return out.join("");
-}
-
-function decryptCaesar(text) {
-    const out = [];
-    const isAllUpper = text === text.toUpperCase() && /[A-Z]/.test(text);
-    
-    for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        const code = c.charCodeAt(0);
-        
-        if (/[0-9]/.test(c)) {
-            const decDig = (code - 48 - 6 + 20) % 10;
-            out.push(String.fromCharCode(48 + decDig));
-            continue;
-        }
-        
-        if (!/[a-zA-Z]/.test(c)) {
-            out.push(c);
-            continue;
-        }
-        
-        const isUpper = c === c.toUpperCase();
-        const cIdx = code - (isUpper ? 65 : 97);
-        
-        if (isAllUpper) {
-            const pIdx = (cIdx - 4 + 26) % 26;
-            out.push(String.fromCharCode(65 + pIdx));
-        } else {
-            if (i === 0 && isUpper) {
-                const pIdx = (cIdx - 4 + 26) % 26;
-                out.push(String.fromCharCode(65 + pIdx));
-            } else {
-                const pIdx = (cIdx + 18 + 26) % 26;
-                out.push(String.fromCharCode(97 + pIdx));
-            }
-        }
-    }
-    return out.join("");
-}
-
-function isCaesarEncrypted(text) {
-    const dec = decryptCaesar(text).toLowerCase();
-    for (const kw of CLEAN_KEYWORDS) {
-        if (dec.includes(kw)) return true;
-    }
-    return false;
-}
-
-function cleanFilename(name) {
-    let nameClean = normalizeMathBold(name);
-    if (isCaesarEncrypted(nameClean)) {
-        nameClean = decryptCaesar(nameClean);
-    }
-    
-    // Rimuove caratteri non ammessi nei nomi dei file
-    nameClean = nameClean.replace(/[\/\\:\*\?"<>\|]/g, '-').trim();
-    
-    // Correzioni di typo specifici
-    if (nameClean.toLowerCase().includes("tumtiri") || nameClean.toLowerCase().includes("tum tir e paratir")) {
-        nameClean = "Tum Tir E Paratir";
-    } else if (nameClean.toLowerCase().includes("anuerismi")) {
-        nameClean = "Aneurismi";
-    } else if (nameClean.toLowerCase().includes("ipert polm") || nameClean.toLowerCase().includes("mxmlb")) {
-        nameClean = "Ipert Polm, Tum Card";
-    }
-    
-    // Title Case per uniformità grafica
-    return nameClean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-}
-
-function getMp4CreationTime(dataBytes) {
-    let idx = -1;
-    // Cerca il blocco 'mvhd' (0x6d 0x76 0x68 0x64)
-    for (let i = 0; i < dataBytes.length - 20; i++) {
-        if (dataBytes[i] === 0x6d && dataBytes[i+1] === 0x76 && dataBytes[i+2] === 0x68 && dataBytes[i+3] === 0x64) {
-            idx = i;
-            break;
-        }
-    }
-    if (idx === -1) return null;
-    
-    const version = dataBytes[idx + 4];
-    let secondsSince1904 = 0;
-    if (version === 0) {
-        const view = new DataView(dataBytes.buffer, dataBytes.byteOffset + idx + 8, 4);
-        secondsSince1904 = view.getUint32(0, false);
-    } else if (version === 1) {
-        const view = new DataView(dataBytes.buffer, dataBytes.byteOffset + idx + 8, 8);
-        const high = view.getUint32(0, false);
-        const low = view.getUint32(4, false);
-        secondsSince1904 = high * 4294967296 + low;
-    } else {
-        return null;
-    }
-    
-    const unixTime = secondsSince1904 - 2082844800;
-    return new Date(unixTime * 1000);
-}
-
-function getFilenameScore(filename) {
-    let score = 0;
-    const nameLower = filename.toLowerCase();
-    for (const kw of CLEAN_KEYWORDS) {
-        if (nameLower.includes(kw)) score += 10;
-    }
-    for (const gibberish of ["xwtuwvq", "izbmzqbq", "kizlqwxibqm", "uitibbqm", "qvb", "xtmczi", "jkm", "jiri", "leicica"]) {
-        if (nameLower.includes(gibberish)) score -= 50;
-    }
-    return score;
-}
-
-// ================================================================================
 // CORE ENGINE: ESTRAZIONE E DECODIFICA DEL NOTEBOOK
 // ================================================================================
+
 async function processGoodnotesFile(file) {
     const l = TRANSLATIONS[currentLang];
     try {
@@ -462,7 +766,6 @@ async function processGoodnotesFile(file) {
             throw new Error(l.errorNoFolder);
         }
         
-        // Raccogliamo tutti gli audio presenti
         const fileKeys = Object.keys(mappaAudio);
         let completedFiles = 0;
         
@@ -471,17 +774,27 @@ async function processGoodnotesFile(file) {
             const attFile = zip.file(`attachments/${attUuid}`);
             if (attFile) {
                 const attData = await attFile.async("uint8array");
-                let creationDate = getMp4CreationTime(attData);
+                const mvhdInfo = parseMvhdFromBytes(attData);
+                
+                let creationDate = mvhdInfo.creationDate;
                 if (!creationDate) {
                     creationDate = attFile.date || new Date();
+                }
+                
+                // Durata: priorità a Protobuf, fallback automatico su atomo mvhd
+                let finalDuration = info.duration;
+                if (!finalDuration || finalDuration === "N/A") {
+                    finalDuration = mvhdInfo.durationFormatted || "N/A";
                 }
                 
                 candidates.push({
                     uuid: attUuid,
                     fileData: attData,
+                    rawTitle: info.raw_title,
                     titleOriginal: info.title,
                     dateObj: creationDate,
-                    duration: info.duration,
+                    unixTimestamp: mvhdInfo.unixTimestamp || (creationDate ? Math.floor(creationDate.getTime() / 1000) : 0),
+                    duration: finalDuration,
                     size: attData.length
                 });
             }
@@ -493,7 +806,7 @@ async function processGoodnotesFile(file) {
             throw new Error(l.errorNoAudio);
         }
         
-        // Deduplicazione fisica in base alla dimensione
+        // Deduplicazione fisica in base alla dimensione esatta del file
         const sizeMap = {};
         for (const cand of candidates) {
             if (!sizeMap[cand.size]) sizeMap[cand.size] = [];
@@ -504,10 +817,9 @@ async function processGoodnotesFile(file) {
         for (const size of Object.keys(sizeMap)) {
             const list = sizeMap[size];
             if (list.length > 1) {
-                // Scegliamo il candidato col nome migliore
                 list.sort((a, b) => {
-                    const scoreA = (!a.titleOriginal || a.titleOriginal.trim() === "") ? -100 : getFilenameScore(cleanFilename(a.titleOriginal));
-                    const scoreB = (!b.titleOriginal || b.titleOriginal.trim() === "") ? -100 : getFilenameScore(cleanFilename(b.titleOriginal));
+                    const scoreA = (!a.rawTitle || a.rawTitle.trim() === "") ? -100 : getFilenameScore(a.titleOriginal);
+                    const scoreB = (!b.rawTitle || b.rawTitle.trim() === "") ? -100 : getFilenameScore(b.titleOriginal);
                     return scoreB - scoreA;
                 });
                 deduplicatedCandidates.push(list[0]);
@@ -517,34 +829,39 @@ async function processGoodnotesFile(file) {
         }
         
         // Ordinamento cronologico
-        deduplicatedCandidates.sort((a, b) => a.dateObj - b.dateObj);
+        deduplicatedCandidates.sort((a, b) => (a.unixTimestamp || 0) - (b.unixTimestamp || 0));
         
-        // Assegnazione dei nomi finali coerenti
+        // Assegnazione dei nomi finali coerenti con sanitizzazione filesystem
         let clipCounter = 1;
         const finalExportList = [];
         
         for (const cand of deduplicatedCandidates) {
-            let cleanTitle = "";
-            if (!cand.titleOriginal || cand.titleOriginal.trim() === "") {
-                cleanTitle = `${l.clipAudio} ${clipCounter}`;
+            let rawTitle = cand.rawTitle;
+            if (!rawTitle || rawTitle.trim() === "") {
+                rawTitle = `${l.clipAudio} ${clipCounter}`;
                 clipCounter++;
-            } else {
-                cleanTitle = cleanFilename(cand.titleOriginal);
             }
             
-            // Date formatting: GG_MM
-            const day = cand.dateObj.getDate().toString().padStart(2, '0');
-            const month = (cand.dateObj.getMonth() + 1).toString().padStart(2, '0');
-            const year = cand.dateObj.getFullYear();
-            const datePrefix = `${day}_${month}`;
-            const dateDisplay = `${day}/${month}/${year}`;
+            // Prefisso Data: GG_MM
+            let datePrefix = "00_00";
+            let dateDisplay = "N/A";
+            if (cand.dateObj && !isNaN(cand.dateObj.getTime())) {
+                const day = cand.dateObj.getDate().toString().padStart(2, '0');
+                const month = (cand.dateObj.getMonth() + 1).toString().padStart(2, '0');
+                const year = cand.dateObj.getFullYear();
+                const hours = cand.dateObj.getHours().toString().padStart(2, '0');
+                const minutes = cand.dateObj.getMinutes().toString().padStart(2, '0');
+                datePrefix = `${day}_${month}`;
+                dateDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
+            }
             
-            const destFilename = `${datePrefix} - ${cleanTitle}.m4a`;
+            const destFilename = buildExportFilename(rawTitle, datePrefix, "m4a");
+            const cleanT = cleanTitle(rawTitle);
             
             finalExportList.push({
                 uuid: cand.uuid,
                 filename: destFilename,
-                titleClean: cleanTitle,
+                titleClean: cleanT,
                 dateDisplay: dateDisplay,
                 duration: cand.duration,
                 sizeMb: (cand.size / (1024 * 1024)).toFixed(2),
@@ -561,7 +878,6 @@ async function processGoodnotesFile(file) {
             list: finalExportList
         };
         
-        // Rendering dell'interfaccia
         renderResults();
         
         updateProgress(100);
@@ -574,8 +890,66 @@ async function processGoodnotesFile(file) {
 }
 
 // ================================================================================
-// RENDERING GRAFICO DELL'INTERFACCIA UTENTE
+// RENDERING GRAFICO E RIPRODUZIONE AUDIO ANTEPRIMA
 // ================================================================================
+
+function togglePlayAudio(index) {
+    if (!activeNotebookData || !activeNotebookData.list[index]) return;
+    const track = activeNotebookData.list[index];
+    const btn = document.getElementById(`play-btn-${index}`);
+
+    if (currentAudio && currentPlayingIndex === index) {
+        currentAudio.pause();
+        currentAudio = null;
+        currentPlayingIndex = null;
+        if (btn) btn.innerHTML = getPlayIconSvg();
+        return;
+    }
+
+    if (currentAudio) {
+        currentAudio.pause();
+        if (currentPlayingIndex !== null) {
+            const oldBtn = document.getElementById(`play-btn-${currentPlayingIndex}`);
+            if (oldBtn) oldBtn.innerHTML = getPlayIconSvg();
+        }
+        currentAudio = null;
+        currentPlayingIndex = null;
+    }
+
+    const blob = new Blob([track.fileData], { type: 'audio/mp4' });
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    currentPlayingIndex = index;
+
+    if (btn) btn.innerHTML = getPauseIconSvg();
+
+    currentAudio.play().catch(e => {
+        console.error("Playback error:", e);
+        if (btn) btn.innerHTML = getPlayIconSvg();
+        currentAudio = null;
+        currentPlayingIndex = null;
+    });
+
+    currentAudio.onended = () => {
+        if (btn) btn.innerHTML = getPlayIconSvg();
+        currentAudio = null;
+        currentPlayingIndex = null;
+        URL.revokeObjectURL(url);
+    };
+}
+
+function getPlayIconSvg() {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+    </svg>`;
+}
+
+function getPauseIconSvg() {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6" y="4" width="4" height="16"></rect>
+        <rect x="14" y="4" width="4" height="16"></rect>
+    </svg>`;
+}
 
 function renderResults() {
     if (!activeNotebookData) return;
@@ -599,6 +973,9 @@ function renderResults() {
                     </div>
                 </div>
                 <div class="recording-actions">
+                    <button id="play-btn-${index}" class="btn-icon" title="${l.playAudio}" onclick="togglePlayAudio(${index})">
+                        ${getPlayIconSvg()}
+                    </button>
                     <button class="btn-icon" title="${l.downloadSingle}" onclick="downloadSingleTrack(${index})">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -686,7 +1063,6 @@ async function downloadAllAsFiles() {
             downloadSingleTrack(i);
             
             updateProgress(10 + Math.floor(((i + 1) / activeNotebookData.list.length) * 90));
-            // Intervallo di sicurezza per evitare blocchi del browser su download multipli
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         
@@ -766,13 +1142,13 @@ fileInput.addEventListener('change', () => {
 downloadAllBtn.addEventListener('click', downloadAllAsZip);
 downloadFilesBtn.addEventListener('click', downloadAllAsFiles);
 
-// Aggiunta ascoltatori per i bottoni dello switcher lingua
+// Switcher lingua
 document.getElementById('lang-btn-it').addEventListener('click', () => applyLanguage('it'));
 document.getElementById('lang-btn-en').addEventListener('click', () => applyLanguage('en'));
 
-// Rilevamento automatico lingua utente
-let defaultLang = 'en';
-if (navigator.language && navigator.language.startsWith('it')) {
-    defaultLang = 'it';
+// Rilevamento automatico lingua utente (default italiano)
+let defaultLang = 'it';
+if (navigator.language && !navigator.language.startsWith('it')) {
+    defaultLang = 'en';
 }
 applyLanguage(defaultLang);
