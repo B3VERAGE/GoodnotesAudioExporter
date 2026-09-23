@@ -366,378 +366,68 @@ def get_parent_search_dir() -> str:
     return default_parent
 
 def resolve_notebook_path(notebook_name: str) -> Optional[str]:
-    """Cerca ricorsivamente il file del notebook per nome nella cartella iCloud genitore."""
-    parent_dir = get_parent_search_dir()
-    if not os.path.exists(parent_dir):
-        return None
-        
-    for root, dirs, files in os.walk(parent_dir):
-        # Ignora cartelle nascoste o di sistema
-        dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('~') and d != "audio non miei"]
-        for f in files:
-            if f.startswith('.') or f.startswith('~'):
-                continue
-            name_without_ext = f.replace('.goodnotes', '').replace('.zip', '')
-            if name_without_ext.lower() == notebook_name.lower():
-                return os.path.join(root, f)
-    return None
+    """Cerca il percorso del notebook tramite backend.services."""
+    from backend.services.icloud_scanner import find_notebook
+    res = find_notebook(notebook_name)
+    return res["path"] if res else None
 
 def list_notebooks() -> List[Dict[str, Any]]:
-    """Elenca tutti i notebook Goodnotes disponibili nella cartella iCloud.
-
-    Rileva i pacchetti .goodnotes/.zip ricorsivamente in iCloud Drive senza copiarli.
-    """
-    notebooks = []
-    parent_dir = get_parent_search_dir()
-    if not os.path.exists(parent_dir):
-        return []
-        
-    for root, dirs, files in os.walk(parent_dir):
-        # Ignora cartelle nascoste o di sistema
-        dirs[:] = [d for d in dirs if not d.startswith('.') and not d.startswith('~') and d != "audio non miei"]
-        for f in files:
-            if f.startswith('.') or f.startswith('~'):
-                continue
-            
-            is_goodnotes_pkg = f.endswith('.goodnotes') or f.endswith('.zip')
-            if is_goodnotes_pkg:
-                full_path = os.path.join(root, f)
-                size_bytes = os.path.getsize(full_path)
-                
-                # Calcola il percorso relativo rispetto alla cartella genitore per visualizzarlo pulito
-                rel_path = os.path.relpath(full_path, parent_dir)
-                
-                notebooks.append({
-                    "name": f.replace('.goodnotes', '').replace('.zip', ''),
-                    "filename": f,
-                    "relative_path": rel_path,
-                    "type": "Quaderno Goodnotes" if f.endswith('.goodnotes') else "Archivio Compresso",
-                    "size_mb": round(size_bytes / (1024 * 1024), 2),
-                    "path": full_path,
-                    "mtime": os.path.getmtime(full_path)
-                })
-            
-    return sorted(notebooks, key=lambda x: x["name"])
+    """Elenca tutti i notebook Goodnotes disponibili nella cartella iCloud tramite backend.services."""
+    from backend.services.icloud_scanner import scan_icloud_notebooks
+    nbs = scan_icloud_notebooks()
+    return [{
+        "name": nb["name"],
+        "filename": os.path.basename(nb["path"]),
+        "relative_path": nb["relative_path"],
+        "type": "Quaderno Goodnotes",
+        "size_mb": nb["size_mb"],
+        "path": nb["path"],
+        "mtime": nb["mtime"]
+    } for nb in nbs]
 
 def import_goodnotes(zip_or_folder_path: str) -> str:
     """Funzione deprecata poiché il caricamento è ora 100% diretto e in locale da iCloud."""
     return "[✓] Il collegamento a iCloud è ora completamente diretto e automatico! Nessuna copia locale necessaria."
 
 def analyze_notebook_audios(notebook_name: str) -> Dict[str, Any]:
-    """Analizza i metadati audio di un notebook in iCloud e restituisce le registrazioni rilevate.
+    """Analizza i metadati audio sfruttando la cache in-memory ad alta efficienza del backend v2.0."""
+    from backend.services.audio_exporter import analyze_notebook_with_cache
+    return analyze_notebook_with_cache(notebook_name)
 
-    Esegue la decifratura e la normalizzazione dei nomi per l'anteprima, senza estrarre nulla su disco!
-
-    Args:
-        notebook_name: Nome del notebook (es. 'AnatoPat' o 'Pato Sis')
-    """
-    notebook_path = resolve_notebook_path(notebook_name)
-    if not notebook_path or not os.path.exists(notebook_path):
-        return {"error": f"Notebook '{notebook_name}' non trovato nella cartella iCloud."}
-        
-    try:
-        with zipfile.ZipFile(notebook_path, 'r') as z:
-            namelist = z.namelist()
-            
-            if "index.events.pb" not in namelist:
-                return {"error": "Il notebook non contiene il file index.events.pb valido."}
-                
-            events_pb_data = z.read("index.events.pb")
-            mappa_audio = extract_events_mapping(events_pb_data)
-            
-            recordings = []
-            for att_uuid, info in mappa_audio.items():
-                att_path = f"attachments/{att_uuid}"
-                if att_path not in namelist:
-                    continue # Salta le registrazioni fantasma (eliminate dall'utente in Goodnotes ma rimaste nei log dei metadati)
-                
-                status = "Presente"
-                size_bytes = z.getinfo(att_path).file_size
-                original_title = info["title"]
-                clean_title = clean_filename(original_title) if original_title else "Registrazione Senza Nome"
-                
-                dt_obj = None
-                if status == "Presente":
-                    try:
-                        with z.open(att_path) as member_f:
-                            member_data = member_f.read(256 * 1024)
-                            idx = member_data.find(b'mvhd')
-                            if idx != -1:
-                                version = member_data[idx + 4]
-                                if version == 0:
-                                    creation_time_bytes = member_data[idx + 8 : idx + 12]
-                                    seconds_since_1904 = struct.unpack('>I', creation_time_bytes)[0]
-                                elif version == 1:
-                                    creation_time_bytes = member_data[idx + 8 : idx + 16]
-                                    seconds_since_1904 = struct.unpack('>Q', creation_time_bytes)[0]
-                                else:
-                                    seconds_since_1904 = None
-                                    
-                                if seconds_since_1904:
-                                    unix_time = seconds_since_1904 - 2082844800
-                                    dt_obj = datetime.fromtimestamp(unix_time)
-                    except Exception:
-                        pass
-                        
-                    if not dt_obj:
-                        try:
-                            zinfo = z.getinfo(att_path)
-                            import time
-                            dt_tuple = zinfo.date_time + (0, 0, -1)
-                            mtime = time.mktime(dt_tuple)
-                            dt_obj = datetime.fromtimestamp(mtime)
-                        except Exception:
-                            pass
-                            
-                date_str = dt_obj.strftime('%d/%m/%Y %H:%M') if dt_obj else "N/A"
-                date_prefix = dt_obj.strftime('%d_%m') if dt_obj else "00_00"
-                
-                recordings.append({
-                    "uuid": att_uuid,
-                    "raw_title": original_title,
-                    "clean_title": clean_title,
-                    "duration": info["duration"],
-                    "size_mb": round(size_bytes / (1024 * 1024), 2),
-                    "date": date_str,
-                    "date_prefix": date_prefix,
-                    "status": status
-                })
-                
-            return {
-                "notebook": notebook_name,
-                "total_recordings": len(recordings),
-                "recordings": sorted(recordings, key=lambda r: r["date"])
-            }
-            
-    except Exception as e:
-        return {"error": f"Errore durante l'analisi: {str(e)}"}
-
-def export_notebook_audios(notebook_name: str, format_audio: str = "m4a", custom_export_dir: str = None, selected_uuids: list = None) -> str:
-    """Decodifica, rinomina, deduplica ed esporta i file audio reali direttamente da iCloud.
-
-    Applica la decodifica Caesar Cipher, normalizza i font matematici e applica la deduplicazione cronologica.
-
-    Args:
-        notebook_name: Nome del notebook da esportare (es. 'AnatoPat').
-        format_audio: Formato audio da esportare. Opzioni: 'm4a' (super leggero, copia diretta) o 'wav' (convertito nativamente).
-        custom_export_dir: Percorso personalizzato per salvare i file audio esportati.
-        selected_uuids: Lista opzionale di UUID delle registrazioni da esportare (selettiva).
-    """
-    notebook_path = resolve_notebook_path(notebook_name)
-    if not notebook_path or not os.path.exists(notebook_path):
-        return f"[x] Errore: Notebook '{notebook_name}' non trovato nella cartella iCloud."
-        
-    if format_audio.lower() not in ["m4a", "wav"]:
-        return "[x] Errore: Formato audio non valido. Scegli tra 'm4a' o 'wav'."
-        
-    try:
-        with zipfile.ZipFile(notebook_path, 'r') as z:
-            namelist = z.namelist()
-            if "index.events.pb" not in namelist:
-                return "[x] Errore: File index.events.pb non trovato nel pacchetto iCloud!"
-                
-            events_pb_data = z.read("index.events.pb")
-            mappa_audio = extract_events_mapping(events_pb_data)
-            
-            is_ios = (sys.platform == 'ios') or (os.environ.get('TERM_PROGRAM') == 'a-Shell')
-            if custom_export_dir:
-                export_dir = os.path.abspath(os.path.expanduser(custom_export_dir))
-            else:
-                suffix = "_iOS" if is_ios else ""
-                export_dir = os.path.join(SUCCESS_DIR, f"{notebook_name}_Audio{suffix}")
-            
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir, exist_ok=True)
-                
-            success_copies = 0
-            mappa_esportata = {}
-            candidati = []
-            
-            for att_uuid, info in mappa_audio.items():
-                if selected_uuids is not None and att_uuid not in selected_uuids:
-                    continue
-                att_path = f"attachments/{att_uuid}"
-                if att_path in namelist:
-                    dt_obj = None
-                    try:
-                        with z.open(att_path) as member_f:
-                            member_data = member_f.read(256 * 1024)
-                            idx = member_data.find(b'mvhd')
-                            if idx != -1:
-                                version = member_data[idx + 4]
-                                if version == 0:
-                                    creation_time_bytes = member_data[idx + 8 : idx + 12]
-                                    seconds_since_1904 = struct.unpack('>I', creation_time_bytes)[0]
-                                elif version == 1:
-                                    creation_time_bytes = member_data[idx + 8 : idx + 16]
-                                    seconds_since_1904 = struct.unpack('>Q', creation_time_bytes)[0]
-                                else:
-                                    seconds_since_1904 = None
-                                    
-                                if seconds_since_1904:
-                                    unix_time = seconds_since_1904 - 2082844800
-                                    dt_obj = datetime.fromtimestamp(unix_time)
-                    except Exception:
-                        pass
-                        
-                    if not dt_obj:
-                        try:
-                            zinfo = z.getinfo(att_path)
-                            import time
-                            dt_tuple = zinfo.date_time + (0, 0, -1)
-                            mtime = time.mktime(dt_tuple)
-                            dt_obj = datetime.fromtimestamp(mtime)
-                        except Exception:
-                            pass
-                            
-                    size = z.getinfo(att_path).file_size
-                    candidati.append({
-                        "uuid": att_uuid,
-                        "title_original": info["title"],
-                        "dt_obj": dt_obj,
-                        "duration": info["duration"],
-                        "size": size
-                    })
-                    
-            size_to_cands = {}
-            for cand in candidati:
-                sz = cand["size"]
-                if sz not in size_to_cands:
-                    size_to_cands[sz] = []
-                size_to_cands[sz].append(cand)
-                
-            clean_keywords = [
-                "polmoni", "inizio", "patologie", "ostruzione", "restrizione", "infettive", "covid", 
-                "tumori", "malattie", "interstiziali", "pleura", "mal", "cardiopatie", "cong", 
-                "aneurismi", "arteriti", "necrosi", "inf", "tumori", "vescica", "cistiti", 
-                "aterosclerosi", "prostata", "ipertensione", "cardiaco", "aorta", "stenosi",
-                "insufficienza", "protesi", "valvolari", "asma", "ecg", "fisiologia", "respiratoria",
-                "trombosi", "venosa", "profonda", "dissecazione", "ischemia", "acuta", "arto",
-                "inf", "trapianto", "terapia", "dispnea", "dispositivi", "semeiotica", "anatomia"
-            ]
-            
-            def get_filename_score(filename: str) -> int:
-                score = 0
-                name_lower = filename.lower()
-                for kw in clean_keywords:
-                    if kw in name_lower:
-                        score += 10
-                for gibberish in ["xwtuwvq", "izbmzqbq", "kizlqwxibqm", "uitibbqm", "qvb", "xtmczi", "jkm", "jiri", "leicica"]:
-                    if gibberish in name_lower:
-                        score -= 50
-                return score
+def export_notebook_audios(
+    notebook_name: str,
+    format_audio: str = "m4a",
+    custom_export_dir: Optional[str] = None,
+    selected_uuids: Optional[List[str]] = None
+) -> str:
+    """Esporta i file audio tramite pipeline Zero-Space & Smart Skip del backend v2.0."""
+    from backend.services.audio_exporter import export_notebook_audios as svc_export
+    from backend.config import SUCCESS_DIR, save_mapping
     
-            finali_da_copiare = []
-            for sz, cands in size_to_cands.items():
-                if len(cands) > 1:
-                    def score_cand(c):
-                        t = c["title_original"]
-                        if not t or t.strip() == "Registrazione Senza Nome" or t.strip() == "":
-                            return -100
-                        return get_filename_score(clean_filename(t))
-                    best_cand = sorted(cands, key=score_cand, reverse=True)[0]
-                    finali_da_copiare.append(best_cand)
-                else:
-                    finali_da_copiare.append(cands[0])
-                    
-            finali_da_copiare.sort(key=lambda c: c["dt_obj"])
-            
-            clip_audio_counter = 1
-            for cand in finali_da_copiare:
-                title_orig = cand["title_original"]
-                if not title_orig or title_orig.strip() == "Registrazione Senza Nome" or title_orig.strip() == "":
-                    clean_title = f"Clip audio {clip_audio_counter}"
-                    clip_audio_counter += 1
-                else:
-                    clean_title = clean_filename(title_orig)
-                    
-                date_prefix = cand["dt_obj"].strftime('%d_%m')
-                date_display = cand["dt_obj"].strftime('%d %b %Y')
-                
-                dest_filename = f"{date_prefix} - {clean_title}.{format_audio.lower()}"
-                dest_file = os.path.join(export_dir, dest_filename)
-                
-                skip_file = False
-                if os.path.exists(dest_file):
-                    if format_audio.lower() == "m4a" and os.path.getsize(dest_file) == cand["size"]:
-                        skip_file = True
-                    elif format_audio.lower() == "wav" and os.path.getsize(dest_file) > 0:
-                        skip_file = True
-                        
-                if skip_file:
-                    success_copies += 1
-                    mappa_esportata[cand["uuid"]] = {
-                        "uuid": cand["uuid"],
-                        "original_title": cand["title_original"],
-                        "clean_title": clean_title,
-                        "date": date_display,
-                        "duration": cand["duration"],
-                        "filename": dest_filename
-                    }
-                    continue
-                    
-                try:
-                    att_path = f"attachments/{cand['uuid']}"
-                    if format_audio.lower() == "m4a":
-                        with z.open(att_path) as src_f:
-                            with open(dest_file, "wb") as dest_f:
-                                shutil.copyfileobj(src_f, dest_f)
-                        success_copies += 1
-                    else: # wav
-                        temp_src = os.path.join(SCRATCH_DIR, f"temp_{cand['uuid']}")
-                        with z.open(att_path) as src_f:
-                            with open(temp_src, "wb") as dest_f:
-                                shutil.copyfileobj(src_f, dest_f)
-                                
-                        cmd = ["afconvert", "-f", "WAVE", "-d", "LEI16", temp_src, dest_file]
-                        res = subprocess.run(cmd, capture_output=True, text=True)
-                        
-                        if os.path.exists(temp_src):
-                            os.remove(temp_src)
-                            
-                        if res.returncode == 0:
-                            success_copies += 1
-                        else:
-                            fallback_filename = dest_filename.replace(".wav", ".m4a")
-                            fallback_dest = os.path.join(export_dir, fallback_filename)
-                            with z.open(att_path) as src_f:
-                                with open(fallback_dest, "wb") as dest_f:
-                                    shutil.copyfileobj(src_f, dest_f)
-                            dest_filename = fallback_filename
-                            success_copies += 1
-                            
-                    try:
-                        import time
-                        mtime = time.mktime(cand["dt_obj"].timetuple())
-                        os.utime(dest_file, (mtime, mtime))
-                    except Exception:
-                        pass
-                        
-                    mappa_esportata[cand["uuid"]] = {
-                        "uuid": cand["uuid"],
-                        "original_title": cand["title_original"],
-                        "clean_title": clean_title,
-                        "date": date_display,
-                        "duration": cand["duration"],
-                        "filename": dest_filename
-                    }
-                except Exception as e:
-                    print(f"[!] Errore nella copia di {cand['uuid']}: {e}")
-                    
-            report_path = os.path.join(export_dir, "report_esportazione.json")
-            with open(report_path, 'w', encoding='utf-8') as rf:
-                import json
-                json.dump(mappa_esportata, rf, indent=4, ensure_ascii=False)
-                
-            summary_msg = f"[✓] Esportazione completata per il notebook '{notebook_name}'.\n"
-            summary_msg += f"    - Percorso esportazione: {export_dir}\n"
-            summary_msg += f"    - Totale registrazioni esportate: {success_copies} (duplicati filtrati: {len(candidati) - len(finali_da_copiare)})\n"
-            summary_msg += f"    - Formato esportato: {format_audio.upper()}"
-            
-            return summary_msg
-            
-    except Exception as e:
-        return f"[x] Errore critico durante l'esportazione: {str(e)}"
+    if custom_export_dir:
+        save_mapping(notebook_name, custom_export_dir)
+        target_dir = custom_export_dir
+    else:
+        target_dir = os.path.join(SUCCESS_DIR, f"{notebook_name}_Audio")
+        
+    res = svc_export(
+        notebook_path_or_name=notebook_name,
+        output_dir=target_dir,
+        selected_uuids=selected_uuids,
+        overwrite=False
+    )
+    if "error" in res:
+        return f"[x] Errore: {res['error']}"
+        
+    return (
+        f"[✓] Esportazione completata per il notebook '{notebook_name}'.\n"
+        f"    - Percorso esportazione: {res['output_dir']}\n"
+        f"    - Totale registrazioni elaborate: {res['total']}\n"
+        f"    - File esportati: {res['exported']}\n"
+        f"    - File saltati (Smart Skip): {res['skipped']}\n"
+        f"    - Errori: {res['failed']}\n"
+        f"    - Formato esportato: {format_audio.upper()}"
+    )
 
 def get_agent_status() -> Dict[str, Any]:
     """Ottiene lo stato generale di salute dell'ambiente e dei file dell'agente."""
