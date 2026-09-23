@@ -6,6 +6,9 @@
 L'applicazione è stata trasformata in un'app desktop nativa per macOS (`dist/Goodnotes Agent.app`) con interfaccia Apple Light Mode e architettura "Zero-Space" collegata direttamente a iCloud Drive. Tutti i bug di avvio (conflitti di porta, persistenza API key, tracce fantasma rimosse da Goodnotes) sono stati risolti e validati con test di robustezza al 100% su tutti i quaderni reali. La richiesta attuale è di ristrutturare il backend ed ottimizzare l'efficienza complessiva del sistema.
 
 ## 📁 File chiave
+- `AGENTS.md`: Specifiche del progetto, matrice di delegazione subagenti (`goodnotes-team-plugin`) e workflow skill.
+- `.agents/rules/`: Regole modulari per architettura, pattern backend asincroni e standard di decodifica/testing.
+- `README.md`: Documentazione tecnica completa del repository GitHub.
 - `run_desktop_app.py`: Entrypoint dell'applicazione desktop nativa macOS (pywebview + server Uvicorn in daemon thread con binding dinamico su porta libera).
 - `agent_server.py`: Server API Starlette locale; gestisce gli endpoint REST per scansione iCloud, decodifica metadati, streaming audio preview, configurazione API key e apertura folder picker nativo.
 - `goodnotes_agent.py`: Logica di business e integrazione SDK; parsing in-memory dei file `.goodnotes` (zip), decodifica Protobuf, decifratura titoli (Caesar + Unicode Math) ed esportazione con deduplicazione Smart Skip.
@@ -14,6 +17,8 @@ L'applicazione è stata trasformata in un'app desktop nativa per macOS (`dist/Go
 - `Goodnotes Agent.spec`: Specifica PyInstaller per la compilazione del bundle `.app` nativo Apple Silicon con icona personalizzata `app_icon.icns`.
 
 ## 🧩 Fatti permanenti
+- **Repository GitHub**: `https://github.com/B3VERAGE/GoodnotesAudioExporter.git` (utente `B3VERAGE`).
+- **Plugin Subagenti**: `goodnotes-team-plugin` in `~/.gemini/config/plugins/goodnotes-team-plugin/` con 3 agenti (`goodnotes-backend-architect`, `goodnotes-ui-specialist`, `goodnotes-qa-guard`) e router `goodnotes-team-router`.
 - **Architettura Zero-Space**: I quaderni Goodnotes non vengono scompattati su disco locale. Vengono aperti in memoria come flussi ZIP direttamente dal percorso iCloud (`~/Library/Mobile Documents/com~apple~CloudDocs/Università-Docs e Registrazioni`).
 - **Risoluzione percorsi bundle**: All'interno del pacchetto `.app`, `sys._MEIPASS` contiene le risorse embedded (`index.html`), mentre `WORKSPACE_ROOT` risale dinamicamente al folder esterno dell'app per caricare `.env` e salvare `scratch/export_mappings.json`.
 - **Rilevamento porte dinamiche**: La porta default è la 8000; se occupata, `run_desktop_app.py` seleziona la prima porta TCP libera sul localhost e `index.html` ricava dinamicamente `API_URL` da `window.location.origin`.
