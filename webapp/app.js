@@ -56,6 +56,26 @@ const icloudModalCloseBtn = document.getElementById('icloud-modal-close');
 const icloudSearchInput = document.getElementById('icloud-search-input');
 const icloudNotebooksList = document.getElementById('icloud-notebooks-list');
 
+// Riferimenti Componenti 1-4 (Cloud Banner, Ricerca Istantanea, Quota Storage, iOS Guide)
+const unifiedBrowseBtn = document.getElementById('unified-browse-btn');
+const unifiedCloudBtn = document.getElementById('unified-cloud-btn');
+const cloudPersistentBanner = document.getElementById('cloud-persistent-banner');
+const cloudPersistentName = document.getElementById('cloud-persistent-name');
+const cloudPersistentRescanBtn = document.getElementById('cloud-persistent-rescan-btn');
+const iosFilesGuideModal = document.getElementById('ios-files-guide-modal');
+const iosFilesGuideChooseBtn = document.getElementById('ios-files-guide-choose-btn');
+const iosFilesGuideCloseBtn = document.getElementById('ios-files-guide-close-btn');
+
+const trackSearchBar = document.getElementById('track-search-bar');
+const trackSearchInput = document.getElementById('track-search-input');
+const trackSearchClearBtn = document.getElementById('track-search-clear-btn');
+const trackSearchCount = document.getElementById('track-search-count');
+
+const storageQuotaContainer = document.getElementById('storage-quota-container');
+const storageQuotaText = document.getElementById('storage-quota-text');
+const storageProgressBar = document.getElementById('storage-progress-bar');
+const purgeAudioBtn = document.getElementById('purge-audio-btn');
+
 let backendConnectionState = { connected: false, origin: null, data: null };
 let icloudCachedNotebooks = [];
 
@@ -74,11 +94,15 @@ class FloatingPlayerManager {
         this.currentTrackIndex = null;
         this.tracksList = [];
         this.notebookName = '';
-        this.playbackRate = 1.0;
         this.isUserScrubbing = false;
         this.currentAudioUrl = null;
 
+        // Recupera velocità salvata in precedenza (Componente 3)
+        const savedSpeed = parseFloat(localStorage.getItem('gn_playback_speed') || '1');
+        this.playbackRate = (!isNaN(savedSpeed) && savedSpeed > 0) ? savedSpeed : 1.0;
+
         this.initEventListeners();
+        this.setPlaybackRate(this.playbackRate);
     }
 
     initEventListeners() {
@@ -189,6 +213,9 @@ class FloatingPlayerManager {
         speedPills.forEach(p => {
             p.classList.toggle('active', parseFloat(p.dataset.speed) === rate);
         });
+        try {
+            localStorage.setItem('gn_playback_speed', rate.toString());
+        } catch (e) {}
     }
 
     skip(seconds) {
@@ -213,7 +240,7 @@ class FloatingPlayerManager {
             playerPlayBtn.setAttribute('title', 'Riproduci');
         }
 
-        // Aggiorna icone nei singoli elementi della lista
+        // Aggiorna icone ed equalizzatore nei singoli elementi della lista (Componente 2)
         if (this.currentTrackIndex !== null) {
             const listBtn = document.getElementById(`play-btn-${this.currentTrackIndex}`);
             if (listBtn) {
@@ -222,6 +249,11 @@ class FloatingPlayerManager {
             const itemElem = listBtn?.closest('.recording-item');
             if (itemElem) {
                 itemElem.classList.toggle('is-playing', isPlaying);
+                itemElem.classList.toggle('is-paused', !isPlaying);
+                const indicator = itemElem.querySelector('.audio-playing-indicator');
+                if (indicator) {
+                    indicator.style.display = isPlaying ? 'inline-flex' : 'none';
+                }
             }
         }
     }
@@ -261,7 +293,11 @@ class FloatingPlayerManager {
             const oldBtn = document.getElementById(`play-btn-${this.currentTrackIndex}`);
             if (oldBtn) oldBtn.innerHTML = getPlayIconSvg();
             const oldItem = oldBtn?.closest('.recording-item');
-            if (oldItem) oldItem.classList.remove('is-playing');
+            if (oldItem) {
+                oldItem.classList.remove('is-playing', 'is-paused');
+                const oldInd = oldItem.querySelector('.audio-playing-indicator');
+                if (oldInd) oldInd.style.display = 'none';
+            }
         }
 
         const track = this.tracksList[index];
@@ -443,6 +479,16 @@ class FloatingPlayerManager {
         if (this.currentAudioUrl) {
             URL.revokeObjectURL(this.currentAudioUrl);
             this.currentAudioUrl = null;
+        }
+        if (this.currentTrackIndex !== null) {
+            const btn = document.getElementById(`play-btn-${this.currentTrackIndex}`);
+            if (btn) btn.innerHTML = getPlayIconSvg();
+            const item = btn?.closest('.recording-item');
+            if (item) {
+                item.classList.remove('is-playing', 'is-paused');
+                const ind = item.querySelector('.audio-playing-indicator');
+                if (ind) ind.style.display = 'none';
+            }
         }
         this.currentTrack = null;
         this.currentTrackIndex = null;
@@ -872,8 +918,29 @@ async function initLibrary() {
         const notebooks = await GoodnotesDB.getAllNotebooks();
         updateLibraryBadge(notebooks.length);
         renderLibraryCards(notebooks);
+        updateStorageQuotaDisplay();
     } catch (err) {
         console.warn('[Library] Impossibile caricare quaderni da IndexedDB:', err);
+    }
+}
+
+async function updateStorageQuotaDisplay() {
+    if (typeof GoodnotesDB === 'undefined' || !storageQuotaText || !storageProgressBar) return;
+    try {
+        const quota = await GoodnotesDB.getStorageQuota();
+        if (quota) {
+            storageQuotaText.innerText = `${quota.usageFormatted} di ${quota.quotaFormatted} (${quota.percent}%)`;
+            storageProgressBar.style.width = `${Math.min(quota.percent, 100)}%`;
+            if (quota.percent > 85) {
+                storageProgressBar.style.background = '#FF3B30';
+            } else if (quota.percent > 60) {
+                storageProgressBar.style.background = '#FF9500';
+            } else {
+                storageProgressBar.style.background = 'var(--accent)';
+            }
+        }
+    } catch (e) {
+        console.warn('[Storage] Quota non disponibile:', e);
     }
 }
 
@@ -1221,34 +1288,61 @@ function getPauseIconSvg() {
     </svg>`;
 }
 
-function renderResults() {
+function renderResults(filterQuery = '') {
     if (!activeNotebookData) return;
     
     const l = TRANSLATIONS[currentLang];
     notebookNameSpan.innerText = activeNotebookData.name;
+    
+    const query = (typeof filterQuery === 'string' ? filterQuery : '').trim().toLowerCase();
+    const filteredList = activeNotebookData.list.filter(item => {
+        if (!query) return true;
+        const nameMatch = item.filename && item.filename.toLowerCase().includes(query);
+        const dateMatch = item.dateDisplay && item.dateDisplay.toLowerCase().includes(query);
+        return nameMatch || dateMatch;
+    });
+
     notebookStatsSpan.innerText = `${activeNotebookData.list.length} ${l.statsSuffix}`;
+    if (trackSearchCount) {
+        trackSearchCount.innerText = `${filteredList.length} ${filteredList.length === 1 ? 'traccia' : 'tracce'}`;
+    }
     
     recordingsContainer.innerHTML = '';
     
-    activeNotebookData.list.forEach((item, index) => {
-        const isCurrentlyPlaying = playerManager.currentTrackIndex === index && !playerManager.audio.paused;
+    if (filteredList.length === 0) {
+        recordingsContainer.innerHTML = `<div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-secondary); font-size: 0.9rem;">Nessuna registrazione trovata per "<strong>${filterQuery}</strong>".</div>`;
+        resultsPanel.style.display = 'flex';
+        return;
+    }
+    
+    filteredList.forEach((item) => {
+        const originalIndex = activeNotebookData.list.indexOf(item);
+        const isCurrentlyPlaying = playerManager.currentTrackIndex === originalIndex;
+        const isPaused = isCurrentlyPlaying && playerManager.audio.paused;
 
         const itemHtml = `
-            <div class="recording-item ${isCurrentlyPlaying ? 'is-playing' : ''}">
+            <div class="recording-item ${isCurrentlyPlaying ? 'is-playing' : ''} ${isPaused ? 'is-paused' : ''}" data-track-index="${originalIndex}">
                 <div class="recording-details">
-                    <div class="recording-name-clean">${item.filename}</div>
+                    <div class="recording-name-clean">
+                        <span>${item.filename}</span>
+                        <div class="audio-playing-indicator" style="display: ${(isCurrentlyPlaying && !isPaused) ? 'inline-flex' : 'none'};">
+                            <span class="sound-bar bar-1"></span>
+                            <span class="sound-bar bar-2"></span>
+                            <span class="sound-bar bar-3"></span>
+                        </div>
+                    </div>
                     <div class="recording-meta">
-                        <span class="recording-tag">${l.trackTag} ${index + 1}</span>
+                        <span class="recording-tag">${l.trackTag} ${originalIndex + 1}</span>
                         <span>${l.dateTag}: ${item.dateDisplay}</span>
                         <span>${l.durationTag}: ${item.duration}</span>
                         <span>${l.weightTag}: ${item.sizeMb} MB</span>
                     </div>
                 </div>
                 <div class="recording-actions">
-                    <button id="play-btn-${index}" class="btn-icon" title="${l.playAudio}" onclick="playerManager.playTrackAtIndex(${index}, activeNotebookData.list, activeNotebookData.name)">
-                        ${isCurrentlyPlaying ? getPauseIconSvg() : getPlayIconSvg()}
+                    <button id="play-btn-${originalIndex}" class="btn-icon" title="${l.playAudio}" onclick="playerManager.playTrackAtIndex(${originalIndex}, activeNotebookData.list, activeNotebookData.name)">
+                        ${(isCurrentlyPlaying && !isPaused) ? getPauseIconSvg() : getPlayIconSvg()}
                     </button>
-                    <button class="btn-icon" title="${l.downloadSingle}" onclick="downloadSingleTrack(${index})">
+                    <button class="btn-icon" title="${l.downloadSingle}" onclick="downloadSingleTrack(${originalIndex})">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
@@ -1471,8 +1565,12 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 dropZone.addEventListener('click', (e) => {
-    // Non propagare se si è cliccato sul bottone cartella
-    if (e.target.closest('#browse-folder-btn')) return;
+    // Non propagare se si è cliccato sui bottoni d'azione
+    if (e.target.closest('#browse-folder-btn') || 
+        e.target.closest('#unified-browse-btn') || 
+        e.target.closest('#unified-cloud-btn') || 
+        e.target.closest('#cloud-dir-picker-btn') || 
+        e.target.closest('#icloud-mac-scan-btn')) return;
     fileInput.click();
 });
 
@@ -1512,6 +1610,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initLibrary();
     initPwaInstallUI();
     initBackendConnection();
+    checkSavedCloudDirectory();
 });
 
 // ================================================================================
@@ -1867,4 +1966,168 @@ if (icloudSearchInput) {
 if (cloudDirPickerBtn) {
     cloudDirPickerBtn.addEventListener('click', handleCloudDirectoryPicker);
 }
+
+// ================================================================================
+// COMPONENTI 1-4: EVENT LISTENERS & LOGICA INTERATTIVA APPLE HIG
+// ================================================================================
+
+// Componente 1: Helper Riconoscimento iOS/iPadOS
+function isIosOrIpad() {
+    const ua = navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// Componente 1: Pulsanti di Selezione Unificati
+if (unifiedBrowseBtn) {
+    unifiedBrowseBtn.addEventListener('click', () => {
+        if (isIosOrIpad() && iosFilesGuideModal) {
+            iosFilesGuideModal.style.display = 'flex';
+            return;
+        }
+        fileInput.click();
+    });
+}
+
+if (unifiedCloudBtn) {
+    unifiedCloudBtn.addEventListener('click', () => {
+        if (backendConnectionState.connected) {
+            openICloudNotebooksModal();
+        } else if (typeof window.showDirectoryPicker === 'function') {
+            handleCloudDirectoryPicker();
+        } else {
+            folderInput.click();
+        }
+    });
+}
+
+// Modal Guida iOS Files
+if (iosFilesGuideChooseBtn) {
+    iosFilesGuideChooseBtn.addEventListener('click', () => {
+        if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
+        fileInput.click();
+    });
+}
+
+if (iosFilesGuideCloseBtn) {
+    iosFilesGuideCloseBtn.addEventListener('click', () => {
+        if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
+    });
+}
+
+if (iosFilesGuideModal) {
+    iosFilesGuideModal.addEventListener('click', (e) => {
+        if (e.target === iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
+    });
+}
+
+// Persistent Cloud Banner
+async function checkSavedCloudDirectory() {
+    if (typeof GoodnotesCloudSyncDB === 'undefined') return;
+    try {
+        const stored = await GoodnotesCloudSyncDB.getStoredDirectoryHandle();
+        if (stored && stored.handle && cloudPersistentBanner) {
+            cloudPersistentBanner.style.display = 'flex';
+            if (cloudPersistentName) cloudPersistentName.innerText = stored.name || 'Cartella Cloud';
+        }
+    } catch (e) {
+        console.warn('[CloudSync] Errore verifica directory salvata:', e);
+    }
+}
+
+if (cloudPersistentRescanBtn) {
+    cloudPersistentRescanBtn.addEventListener('click', async () => {
+        if (typeof GoodnotesCloudSyncDB === 'undefined') return;
+        const stored = await GoodnotesCloudSyncDB.getStoredDirectoryHandle();
+        if (stored && stored.handle) {
+            const hasPerm = await GoodnotesCloudSyncDB.verifyHandlePermission(stored.handle);
+            if (hasPerm) {
+                showLoader('Scansione della cartella cloud...');
+                const notebooks = await GoodnotesCloudSyncDB.scanDirectoryHandle(stored.handle);
+                hideLoader();
+                if (notebooks && notebooks.length > 0) {
+                    renderICloudNotebooks(notebooks, stored.name);
+                    openICloudNotebooksModal();
+                } else {
+                    showError('Nessun quaderno .goodnotes trovato nella cartella.');
+                }
+            } else {
+                handleCloudDirectoryPicker();
+            }
+        } else {
+            handleCloudDirectoryPicker();
+        }
+    });
+}
+
+// Componente 2: Barra di Ricerca Istantanea Tracce
+if (trackSearchInput) {
+    trackSearchInput.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (trackSearchClearBtn) {
+            trackSearchClearBtn.style.display = val ? 'flex' : 'none';
+        }
+        renderResults(val);
+    });
+}
+
+if (trackSearchClearBtn) {
+    trackSearchClearBtn.addEventListener('click', () => {
+        if (trackSearchInput) {
+            trackSearchInput.value = '';
+            trackSearchClearBtn.style.display = 'none';
+            renderResults('');
+            trackSearchInput.focus();
+        }
+    });
+}
+
+// Componente 4: Svuota Cache Audio
+if (purgeAudioBtn) {
+    purgeAudioBtn.addEventListener('click', async () => {
+        if (!confirm('Vuoi liberare spazio cancellando solo i file audio memorizzati in cache? I titoli, le durate e i quaderni rimarranno salvati.')) {
+            return;
+        }
+        try {
+            showLoader('Pulizia cache audio in corso...');
+            const count = await GoodnotesDB.purgeAudioBlobsOnly();
+            hideLoader();
+            alert(`Cache audio liberata con successo! Rimosso audio da ${count} registrazioni.`);
+            await initLibrary();
+        } catch (err) {
+            hideLoader();
+            showError('Errore durante la pulizia della cache audio: ' + err.message);
+        }
+    });
+}
+
+// Componente 3: Scorciatoie da tastiera Apple HIG
+window.addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) {
+        if (e.key === 'Escape') {
+            e.target.blur();
+        }
+        return;
+    }
+
+    if (e.code === 'Space') {
+        e.preventDefault();
+        playerManager.togglePlayPause();
+    } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        playerManager.skip(-15);
+    } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        playerManager.skip(15);
+    } else if (e.key === 'Escape') {
+        const openModal = document.querySelector('.apple-modal-backdrop[style*="flex"], .modal-backdrop[style*="flex"]');
+        if (openModal) {
+            openModal.style.display = 'none';
+        } else if (librarySection && librarySection.style.display !== 'none') {
+            librarySection.style.display = 'none';
+        } else if (floatingPlayer && floatingPlayer.style.display !== 'none') {
+            playerManager.closePlayer();
+        }
+    }
+});
 

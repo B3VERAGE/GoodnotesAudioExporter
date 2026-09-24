@@ -4,6 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Goodnotes AI Agent - Control Panel</title>
+
+    <!-- COMPONENTE 3: Smart Redirect Mobile per iPad, iPhone e Android verso la PWA standalone -->
+    <script>
+        (function() {
+            var ua = navigator.userAgent || "";
+            var isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 && !window.MSStream);
+            var isAndroid = /Android/i.test(ua);
+            var isSmallScreen = window.innerWidth <= 768;
+            if (isIos || isAndroid || (isSmallScreen && ('ontouchstart' in window))) {
+                window.location.replace('./webapp/');
+            }
+        })();
+    </script>
+
     <!-- Google Font: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

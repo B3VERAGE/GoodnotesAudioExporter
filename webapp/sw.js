@@ -1,10 +1,10 @@
 // ================================================================================
-// Goodnotes 6 Audio Exporter & Renamer - Service Worker (v8)
+// Goodnotes 6 Audio Exporter & Renamer - Service Worker (v9)
 // Strategia PWA: Offline-First, Stale-While-Revalidate per App Shell & Assets
 // Network-First per API con Graceful Degradation
 // ================================================================================
 
-const CACHE_NAME = 'goodnotes-audio-pwa-v8';
+const CACHE_NAME = 'goodnotes-audio-pwa-v9';
 
 // File da memorizzare in cache all'installazione per abilitare l'offline permanente
 const ASSETS_TO_CACHE = [

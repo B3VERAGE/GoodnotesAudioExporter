@@ -1574,3 +1574,233 @@ footer.app-footer {
     transform: scale(1.02);
 }
 
+/* ==========================================================================
+   COMPONENTI 1-4: CLOUD BANNER, SEARCH, EQUALIZER, STORAGE QUOTA
+   ========================================================================== */
+
+/* COMPONENTE 1: Drop Zone Primary Actions */
+.drop-zone-primary-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-apple-large {
+    padding: 0.75rem 1.4rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 980px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: var(--transition-spring);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+}
+
+.btn-apple-large:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* COMPONENTE 1: Persistent Cloud Banner */
+.cloud-persistent-banner {
+    border-left: 4px solid var(--accent);
+}
+
+.status-badge-cloud {
+    color: var(--accent);
+    background: var(--accent-subtle);
+}
+
+/* COMPONENTE 2: Barra di Ricerca Istantanea */
+.track-search-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 0.5rem 0.85rem;
+    margin-bottom: 0.85rem;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition-spring);
+}
+
+.track-search-bar:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.track-search-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1;
+    color: var(--text-secondary);
+}
+
+.track-search-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    outline: none;
+}
+
+.track-search-clear-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-fast);
+}
+
+.track-search-clear-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-subtle);
+}
+
+.track-search-count {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 0.2rem 0.6rem;
+    border-radius: 980px;
+    white-space: nowrap;
+}
+
+/* COMPONENTE 2: Indicatore Equalizzatore Sonoro Animato */
+.audio-playing-indicator {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2.5px;
+    height: 15px;
+    padding: 0 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+.audio-playing-indicator .sound-bar {
+    width: 2.5px;
+    background: var(--accent);
+    border-radius: 1.5px;
+    height: 100%;
+    animation: soundBars 0.8s ease-in-out infinite alternate;
+}
+
+.audio-playing-indicator .bar-1 {
+    height: 35%;
+    animation-delay: 0.1s;
+}
+
+.audio-playing-indicator .bar-2 {
+    height: 95%;
+    animation-delay: 0.3s;
+}
+
+.audio-playing-indicator .bar-3 {
+    height: 55%;
+    animation-delay: 0.2s;
+}
+
+.recording-item.is-paused .audio-playing-indicator .sound-bar {
+    animation-play-state: paused;
+    opacity: 0.5;
+}
+
+@keyframes soundBars {
+    0% { height: 20%; }
+    50% { height: 100%; }
+    100% { height: 35%; }
+}
+
+/* COMPONENTE 4: Storage Quota Card & Bar */
+.storage-quota-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 0.85rem 1.15rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.storage-quota-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.storage-quota-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.storage-quota-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.storage-quota-val {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.btn-purge-cache {
+    font-size: 0.82rem;
+    color: #FF3B30;
+    background: rgba(255, 59, 48, 0.08);
+    border: 1px solid rgba(255, 59, 48, 0.2);
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: var(--transition-fast);
+}
+
+.btn-purge-cache:hover {
+    background: rgba(255, 59, 48, 0.16);
+    transform: translateY(-1px);
+}
+
+.storage-progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-card);
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.storage-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+

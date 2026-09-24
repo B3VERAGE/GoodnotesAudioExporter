@@ -128,6 +128,34 @@
             </div>
         </aside>
 
+        <!-- Persistent Cloud Banner (Componente 1) -->
+        <aside id="cloud-persistent-banner" class="apple-install-banner apple-icloud-banner cloud-persistent-banner" style="display: none;" role="region" aria-label="Cartella Cloud Connessa">
+            <div class="apple-banner-content">
+                <div class="apple-banner-icon-container icloud-icon-bg">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        <path d="M12 11v6"></path>
+                        <path d="M9 14l3-3 3 3"></path>
+                    </svg>
+                </div>
+                <div class="apple-banner-info">
+                    <span class="apple-banner-badge status-badge-cloud">Cartella Cloud Attiva</span>
+                    <strong id="cloud-persistent-name" class="apple-banner-title">Cartella Collegata</strong>
+                    <p id="cloud-persistent-desc" class="apple-banner-desc">Accesso rapido ai quaderni sincronizzati in iCloud Drive / Google Drive.</p>
+                </div>
+            </div>
+            <div class="apple-banner-actions">
+                <button id="cloud-persistent-rescan-btn" class="apple-banner-action-btn btn-icloud-action">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    <span id="cloud-persistent-btn-text">Riscansiona Ora</span>
+                </button>
+            </div>
+        </aside>
+
         <!-- Alert box per gli errori -->
         <div id="error-alert" class="alert-box">
             <span class="alert-icon">
@@ -154,6 +182,27 @@
                     </svg>
                 </button>
             </div>
+
+            <!-- Storage Quota e Pulizia Cache Audio (Componente 4) -->
+            <div id="storage-quota-container" class="storage-quota-card">
+                <div class="storage-quota-header">
+                    <div class="storage-quota-info">
+                        <span class="storage-quota-label">Spazio Storage Locale</span>
+                        <span id="storage-quota-text" class="storage-quota-val">Calcolo in corso...</span>
+                    </div>
+                    <button id="purge-audio-btn" class="btn-subtle btn-purge-cache" title="Cancella solo i file audio memorizzati per liberare spazio, mantenendo titoli e metadati">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        <span>Libera Spazio Cache Audio</span>
+                    </button>
+                </div>
+                <div class="storage-progress-track">
+                    <div id="storage-progress-bar" class="storage-progress-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
             <div id="library-list" class="library-list">
                 <!-- Quaderni salvati inseriti dinamicamente via JS -->
             </div>
@@ -174,6 +223,24 @@
                 <h3 id="dropzone-title">Trascina qui il tuo quaderno .goodnotes</h3>
                 <p id="dropzone-subtitle">oppure tocca per sfogliare i tuoi file</p>
                 
+                <!-- Pulsanti di Selezione Unificati (Componente 1) -->
+                <div class="drop-zone-primary-actions">
+                    <button type="button" id="unified-browse-btn" class="btn btn-primary btn-apple-large" title="Sfoglia file .goodnotes o cartella locale">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span>Sfoglia Notebook...</span>
+                    </button>
+                    <button type="button" id="unified-cloud-btn" class="btn btn-secondary btn-apple-large" title="Collega cartella iCloud Drive o Google Drive">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                        </svg>
+                        <span>Collega Cartella Cloud...</span>
+                    </button>
+                </div>
+
                 <!-- Azioni discrete interne alla dropzone -->
                 <div class="drop-zone-actions">
                     <button type="button" id="browse-folder-btn" class="btn-subtle" title="Seleziona una cartella intera contenente file Goodnotes">
@@ -247,6 +314,24 @@
                 </div>
 
                 <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0.25rem 0;">
+
+                <!-- Barra di Ricerca Istantanea Tracce (Componente 2) -->
+                <div id="track-search-bar" class="track-search-bar" style="display: flex;">
+                    <div class="track-search-input-wrapper">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" id="track-search-input" class="track-search-input" placeholder="Cerca tra le registrazioni (titolo o data)..." aria-label="Cerca registrazioni audio">
+                        <button id="track-search-clear-btn" class="track-search-clear-btn" style="display: none;" title="Cancella ricerca" aria-label="Cancella ricerca">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <span id="track-search-count" class="track-search-count">0 tracce</span>
+                </div>
 
                 <!-- Lista delle tracce estratte -->
                 <div id="recordings-container" class="recordings-list">
@@ -440,6 +525,44 @@
                 </div>
                 <div id="icloud-notebooks-list" class="icloud-notebooks-list">
                     <!-- Popolato dinamicamente da JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Guida 2-Step iOS/iPadOS per Selezione File / Cartelle iCloud -->
+    <div id="ios-files-guide-modal" class="apple-modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Come selezionare file da iCloud su iOS">
+        <div class="apple-modal-card modal-notebooks-sheet">
+            <div class="apple-modal-header">
+                <div class="apple-modal-title-group">
+                    <span class="apple-modal-badge">Guida iOS / iPadOS</span>
+                    <h3 class="apple-modal-title">Apri da iCloud Drive su iOS</h3>
+                    <p class="apple-modal-desc">Segui questi passaggi nell'app File di Apple per selezionare il tuo quaderno:</p>
+                </div>
+                <button id="ios-files-guide-close-btn" class="apple-modal-close-btn" aria-label="Chiudi guida">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="apple-modal-body" style="padding-top: 0.5rem;">
+                <div class="apple-guide-step">
+                    <div class="apple-step-badge">1</div>
+                    <div class="apple-step-content">
+                        <span>Nel selettore di sistema, tocca <strong>"Sfoglia"</strong> in basso a destra e seleziona <strong>iCloud Drive</strong>.</span>
+                    </div>
+                </div>
+                <div class="apple-guide-step">
+                    <div class="apple-step-badge">2</div>
+                    <div class="apple-step-content">
+                        <span>Entra nella cartella di Goodnotes e tocca il file <code>.goodnotes</code> per estrarre e ascoltare le registrazioni.</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                    <button id="ios-files-guide-choose-btn" class="apple-banner-action-btn">
+                        <span>Sfoglia Ora</span>
+                    </button>
                 </div>
             </div>
         </div>

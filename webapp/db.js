@@ -1,15 +1,11 @@
 /**
  * ================================================================================
- * Goodnotes 6 AI Audio Exporter - IndexedDB Library Manager (Milestone 2)
+ * Goodnotes 6 AI Audio Exporter - IndexedDB Library Manager
  * ================================================================================
  * Wrapper ultra-leggero e robusto su IndexedDB:
  * - Database: GoodnotesLibraryDB (versione 1).
  * - Object Store 1: 'notebooks' (chiave: id).
- *   Metadati: { id, name, fileSize, updatedAt, trackCount, ghostTracksCount }.
  * - Object Store 2: 'tracks' (chiave: id, indice: notebookId).
- *   Metadati: { id, notebookId, uuid, filename, cleanTitle, rawTitle, duration,
- *               durationSeconds, recordingDate, dateDisplay, unixTimestamp, size,
- *               sizeMb, audioBlob }.
  * 
  * Funzioni esportate/globali:
  * - saveNotebookWithTracks(notebookInfo, tracksList)
@@ -17,6 +13,8 @@
  * - getTracksForNotebook(notebookId)
  * - deleteNotebook(notebookId)
  * - getTrackAudioBlob(trackId)
+ * - purgeAudioBlobsOnly()
+ * - getStorageQuota()
  * ================================================================================
  */
 
@@ -30,7 +28,6 @@ let dbInstancePromise = null;
 
 /**
  * Apre e memorizza la connessione singleton al database IndexedDB.
- * Esegue la migrazione dello schema e crea gli indici necessari.
  */
 function openDatabase() {
     if (dbInstancePromise) {
@@ -47,12 +44,10 @@ function openDatabase() {
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
 
-            // Store 'notebooks' con chiave primaria 'id'
             if (!db.objectStoreNames.contains(STORE_NOTEBOOKS)) {
                 db.createObjectStore(STORE_NOTEBOOKS, { keyPath: 'id' });
             }
 
-            // Store 'tracks' con chiave primaria 'id' e indice su 'notebookId'
             if (!db.objectStoreNames.contains(STORE_TRACKS)) {
                 const tracksStore = db.createObjectStore(STORE_TRACKS, { keyPath: 'id' });
                 tracksStore.createIndex(INDEX_NOTEBOOK_ID, 'notebookId', { unique: false });
@@ -81,10 +76,6 @@ function openDatabase() {
 
 /**
  * Salva atomicamente un quaderno e la sua lista di tracce in un'unica transazione readwrite.
- * 
- * @param {Object} notebookInfo - Metadati del quaderno ({ id, name, fileSize, ... })
- * @param {Array<Object>} tracksList - Elenco tracce audio con audioBlob
- * @returns {Promise<boolean>}
  */
 async function saveNotebookWithTracks(notebookInfo, tracksList) {
     if (!notebookInfo || !notebookInfo.id) {
@@ -103,7 +94,6 @@ async function saveNotebookWithTracks(notebookInfo, tracksList) {
 
         const tracksCount = Array.isArray(tracksList) ? tracksList.length : (notebookInfo.trackCount || 0);
 
-        // Prepara e memorizza il record del quaderno
         const nbRecord = {
             id: notebookInfo.id,
             name: notebookInfo.name || notebookInfo.title || notebookInfo.id,
@@ -114,7 +104,6 @@ async function saveNotebookWithTracks(notebookInfo, tracksList) {
         };
         notebooksStore.put(nbRecord);
 
-        // Memorizza ciascuna traccia associata
         if (Array.isArray(tracksList)) {
             for (const track of tracksList) {
                 const trackId = track.id || track.uuid || `${notebookInfo.id}_${track.filename}`;
@@ -149,8 +138,6 @@ async function saveNotebookWithTracks(notebookInfo, tracksList) {
 
 /**
  * Restituisce l'elenco di tutti i quaderni salvati in biblioteca, ordinati dal più recente.
- * 
- * @returns {Promise<Array<Object>>}
  */
 async function getAllNotebooks() {
     const db = await openDatabase();
@@ -171,10 +158,7 @@ async function getAllNotebooks() {
 }
 
 /**
- * Restituisce tutte le tracce audio appartenenti a un quaderno specifico, ordinate cronologicamente.
- * 
- * @param {string} notebookId - ID del quaderno
- * @returns {Promise<Array<Object>>}
+ * Restituisce tutte le tracce audio appartenenti a un quaderno specifico.
  */
 async function getTracksForNotebook(notebookId) {
     if (!notebookId) return [];
@@ -199,9 +183,6 @@ async function getTracksForNotebook(notebookId) {
 
 /**
  * Elimina atomicamente un quaderno e tutte le relative tracce audio memorizzate in IndexedDB.
- * 
- * @param {string} notebookId - ID del quaderno da rimuovere
- * @returns {Promise<boolean>}
  */
 async function deleteNotebook(notebookId) {
     if (!notebookId) return false;
@@ -217,10 +198,8 @@ async function deleteNotebook(notebookId) {
         tx.onerror = (e) => reject(new Error(`Errore deleteNotebook: ${e.target.error?.message}`));
         tx.oncomplete = () => resolve(true);
 
-        // Cancella il record del quaderno
         notebooksStore.delete(notebookId);
 
-        // Cancella tutte le tracce collegate recuperando le chiavi dall'indice
         const keyReq = index.getAllKeys(notebookId);
         keyReq.onsuccess = () => {
             const trackKeys = keyReq.result || [];
@@ -232,10 +211,7 @@ async function deleteNotebook(notebookId) {
 }
 
 /**
- * Recupera direttamente il Blob audio di una traccia specifica per la riproduzione o il download.
- * 
- * @param {string} trackId - ID della traccia
- * @returns {Promise<Blob|null>}
+ * Recupera direttamente il Blob audio di una traccia specifica.
  */
 async function getTrackAudioBlob(trackId) {
     if (!trackId) return null;
@@ -260,17 +236,85 @@ async function getTrackAudioBlob(trackId) {
     });
 }
 
-// ================================================================================
-// REGISTRAZIONE AMBIENTE GLOBALE E COMPATIBILITÀ BROWSER / ESM / NODE
-// ================================================================================
+/**
+ * COMPONENTE 4: Rimuove esclusivamente i Blob audio pesanti dalla tabella tracks,
+ * preservando intatti tutti i metadati, nomi decodificati, durate e cronologia dei quaderni.
+ */
+async function purgeAudioBlobsOnly() {
+    const db = await openDatabase();
 
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_TRACKS], 'readwrite');
+        const store = tx.objectStore(STORE_TRACKS);
+        const req = store.openCursor();
+        let purgedCount = 0;
+
+        req.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                const track = cursor.value;
+                if (track.audioBlob || track.fileData) {
+                    track.audioBlob = null;
+                    track.fileData = null;
+                    cursor.update(track);
+                    purgedCount++;
+                }
+                cursor.continue();
+            } else {
+                resolve({ purgedCount });
+            }
+        };
+
+        req.onerror = (e) => reject(new Error(`Errore purgeAudioBlobsOnly: ${e.target.error?.message}`));
+    });
+}
+
+/**
+ * COMPONENTE 4: Interroga l'API standard navigator.storage.estimate()
+ * per calcolare l'occupazione disco totale disponibile per l'app.
+ */
+async function getStorageQuota() {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+        try {
+            const estimate = await navigator.storage.estimate();
+            const usage = estimate.usage || 0;
+            const quota = estimate.quota || 0;
+            const usageMb = (usage / (1024 * 1024)).toFixed(1);
+            const quotaMb = quota > 0 ? (quota / (1024 * 1024)).toFixed(0) : '0';
+            const quotaGb = quota > 0 ? (quota / (1024 * 1024 * 1024)).toFixed(1) : '0';
+            const percent = quota > 0 ? Math.min(100, Math.round((usage / quota) * 100)) : 0;
+            return {
+                usage,
+                quota,
+                usageMb,
+                quotaMb,
+                quotaGb,
+                percent
+            };
+        } catch (err) {
+            console.warn('[Storage] Errore stima quota:', err);
+        }
+    }
+    return {
+        usage: 0,
+        quota: 0,
+        usageMb: '0.0',
+        quotaMb: '0',
+        quotaGb: '0',
+        percent: 0
+    };
+}
+
+// Registrazione Ambiente Globale
 const GoodnotesDB = {
     openDatabase,
     saveNotebookWithTracks,
     getAllNotebooks,
     getTracksForNotebook,
     deleteNotebook,
-    getTrackAudioBlob
+    getTrackAudioBlob,
+    purgeAudioBlobsOnly,
+    getStorageQuota
 };
 
 if (typeof globalThis !== 'undefined') {
@@ -280,6 +324,8 @@ if (typeof globalThis !== 'undefined') {
     globalThis.getTracksForNotebook = getTracksForNotebook;
     globalThis.deleteNotebook = deleteNotebook;
     globalThis.getTrackAudioBlob = getTrackAudioBlob;
+    globalThis.purgeAudioBlobsOnly = purgeAudioBlobsOnly;
+    globalThis.getStorageQuota = getStorageQuota;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
