@@ -4,6 +4,7 @@ Goodnotes 6 AI Audio Exporter - Starlette Asynchronous API Routes
 ================================================================================
 Tutti gli handler CPU-bound e disco-bound sono isolati con asyncio.to_thread
 per garantire zero blocchi sull'event loop principale di Starlette/Uvicorn.
+================================================================================
 """
 
 import os
@@ -16,7 +17,7 @@ import subprocess
 import urllib.request
 import unicodedata
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from starlette.responses import JSONResponse, HTMLResponse, FileResponse
 from starlette.routing import Route, Mount
@@ -83,56 +84,60 @@ def clean_cache_dir() -> None:
         print(f"[!] Errore pulizia cache audio: {e}")
 
 # ==============================================================================
-# ROUTE HANDLERS
+# ROUTE HANDLERS & SYNC WORKERS (Offloaded to asyncio.to_thread)
 # ==============================================================================
+
+def _compute_status_sync(api_key: str) -> Dict[str, Any]:
+    """Ispezione sincronizzata dello stato delle cartelle e dei quaderni."""
+    notebooks = scan_icloud_notebooks()
+    num_notebooks = len(notebooks)
+
+    total_audio_folders = 0
+    total_audio_files = 0
+    scanned_paths = set()
+
+    if os.path.exists(SUCCESS_DIR):
+        for item in os.listdir(SUCCESS_DIR):
+            item_path = os.path.join(SUCCESS_DIR, item)
+            if os.path.isdir(item_path) and item.endswith("_Audio"):
+                scanned_paths.add(os.path.abspath(item_path))
+
+    mappings = load_mappings()
+    for nb, path in mappings.items():
+        if nb != "__PARENT_SEARCH_DIR__" and path:
+            expanded_path = os.path.abspath(os.path.expanduser(path))
+            if os.path.exists(expanded_path) and os.path.isdir(expanded_path):
+                scanned_paths.add(expanded_path)
+
+    for folder_path in scanned_paths:
+        total_audio_folders += 1
+        try:
+            for f in os.listdir(folder_path):
+                if f.endswith(".m4a") or f.endswith(".wav"):
+                    total_audio_files += 1
+        except Exception:
+            pass
+
+    has_key = bool(api_key)
+    is_valid = validate_gemini_key(api_key) if has_key else False
+
+    return {
+        "status": "In funzione (Backend Modulare v2.0 - Zero-Space)",
+        "risorse_directory": get_parent_search_dir(),
+        "success_directory": SUCCESS_DIR,
+        "notebooks_in_risorse": num_notebooks,
+        "cartelle_audio_in_success": total_audio_folders,
+        "file_audio_esportati": total_audio_files,
+        "api_key_configured": has_key,
+        "api_key_valid": is_valid,
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
 
 async def get_status(request):
     """Restituisce lo stato operativo del backend, workspace e validità chiave API."""
     try:
-        notebooks = await asyncio.to_thread(scan_icloud_notebooks)
-        num_notebooks = len(notebooks)
-
-        total_audio_folders = 0
-        total_audio_files = 0
-        scanned_paths = set()
-
-        if os.path.exists(SUCCESS_DIR):
-            for item in os.listdir(SUCCESS_DIR):
-                item_path = os.path.join(SUCCESS_DIR, item)
-                if os.path.isdir(item_path) and item.endswith("_Audio"):
-                    scanned_paths.add(os.path.abspath(item_path))
-
-        mappings = load_mappings()
-        for nb, path in mappings.items():
-            if nb != "__PARENT_SEARCH_DIR__" and path:
-                expanded_path = os.path.abspath(os.path.expanduser(path))
-                if os.path.exists(expanded_path) and os.path.isdir(expanded_path):
-                    scanned_paths.add(expanded_path)
-
-        for folder_path in scanned_paths:
-            total_audio_folders += 1
-            try:
-                for f in os.listdir(folder_path):
-                    if f.endswith(".m4a") or f.endswith(".wav"):
-                        total_audio_files += 1
-            except Exception:
-                pass
-
         api_key = os.environ.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
-        has_key = bool(api_key)
-        is_valid = await asyncio.to_thread(validate_gemini_key, api_key) if has_key else False
-
-        status_data = {
-            "status": "In funzione (Backend Modulare v2.0 - Zero-Space)",
-            "risorse_directory": get_parent_search_dir(),
-            "success_directory": SUCCESS_DIR,
-            "notebooks_in_risorse": num_notebooks,
-            "cartelle_audio_in_success": total_audio_folders,
-            "file_audio_esportati": total_audio_files,
-            "api_key_configured": has_key,
-            "api_key_valid": is_valid,
-            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
+        status_data = await asyncio.to_thread(_compute_status_sync, api_key)
         return JSONResponse(status_data)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -141,7 +146,6 @@ async def get_notebooks(request):
     """Elenca tutti i quaderni Goodnotes reali disponibili su iCloud Drive."""
     try:
         notebooks = await asyncio.to_thread(scan_icloud_notebooks)
-        # Formatta per compatibilità con il frontend
         formatted = []
         for nb in notebooks:
             formatted.append({
@@ -169,6 +173,14 @@ async def analyze_notebook(request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+def _resolve_target_dir_sync(notebook_name: str, custom_export_dir: Optional[str]) -> str:
+    """Risolve e memorizza il percorso di destinazione sincronamente."""
+    if custom_export_dir:
+        save_mapping(notebook_name, custom_export_dir)
+        return custom_export_dir
+    saved_map = load_mappings()
+    return saved_map.get(notebook_name, os.path.join(SUCCESS_DIR, f"{notebook_name}_Audio"))
+
 async def export_notebook(request):
     """Esporta le registrazioni audio del quaderno selezionato."""
     try:
@@ -181,15 +193,8 @@ async def export_notebook(request):
         if not notebook_name:
             return JSONResponse({"error": "Parametro 'notebook' mancante nel corpo della richiesta."}, status_code=400)
 
-        # Salva la mappatura se specificata
-        if custom_export_dir:
-            save_mapping(notebook_name, custom_export_dir)
-            target_out_dir = custom_export_dir
-        else:
-            saved_map = load_mappings()
-            target_out_dir = saved_map.get(notebook_name, os.path.join(SUCCESS_DIR, f"{notebook_name}_Audio"))
+        target_out_dir = await asyncio.to_thread(_resolve_target_dir_sync, notebook_name, custom_export_dir)
 
-        # Esegui l'esportazione batch non bloccante
         export_res = await asyncio.to_thread(
             export_notebook_audios,
             notebook_path_or_name=notebook_name,
@@ -215,36 +220,40 @@ async def export_notebook(request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+def _scan_export_paths_sync(query_parent: Optional[str]) -> Dict[str, Any]:
+    """Scansiona i percorsi e le cartelle disponibili per l'esportazione."""
+    mappings = load_mappings()
+    saved_parent = mappings.get("__PARENT_SEARCH_DIR__")
+
+    parent_dir = query_parent or saved_parent or get_parent_search_dir()
+    if parent_dir != saved_parent:
+        save_mapping("__PARENT_SEARCH_DIR__", parent_dir)
+
+    paths = set()
+    expanded_parent = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(parent_dir)))
+
+    if os.path.exists(expanded_parent) and os.path.isdir(expanded_parent):
+        for item in os.listdir(expanded_parent):
+            full_path = os.path.join(expanded_parent, item)
+            if os.path.isdir(full_path) and not item.startswith('.'):
+                paths.add(unicodedata.normalize("NFC", full_path))
+
+    for notebook, path in mappings.items():
+        if notebook != "__PARENT_SEARCH_DIR__" and os.path.exists(path):
+            paths.add(unicodedata.normalize("NFC", path))
+
+    return {
+        "paths": sorted(list(paths)),
+        "mappings": {k: v for k, v in mappings.items() if k != "__PARENT_SEARCH_DIR__"},
+        "parent_search_dir": parent_dir
+    }
+
 async def get_export_paths(request):
     """Scansiona la cartella genitore iCloud ed elenca le cartelle disponibili per l'esportazione."""
     try:
         query_parent = request.query_params.get("parent_search_dir")
-        mappings = load_mappings()
-        saved_parent = mappings.get("__PARENT_SEARCH_DIR__")
-
-        parent_dir = query_parent or saved_parent or get_parent_search_dir()
-        if parent_dir != saved_parent:
-            save_mapping("__PARENT_SEARCH_DIR__", parent_dir)
-
-        paths = set()
-        expanded_parent = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(parent_dir)))
-
-        if os.path.exists(expanded_parent) and os.path.isdir(expanded_parent):
-            for item in os.listdir(expanded_parent):
-                full_path = os.path.join(expanded_parent, item)
-                if os.path.isdir(full_path) and not item.startswith('.'):
-                    paths.add(unicodedata.normalize("NFC", full_path))
-
-        # Includi percorsi salvati
-        for notebook, path in mappings.items():
-            if notebook != "__PARENT_SEARCH_DIR__" and os.path.exists(path):
-                paths.add(unicodedata.normalize("NFC", path))
-
-        return JSONResponse({
-            "paths": sorted(list(paths)),
-            "mappings": {k: v for k, v in mappings.items() if k != "__PARENT_SEARCH_DIR__"},
-            "parent_search_dir": parent_dir
-        })
+        data = await asyncio.to_thread(_scan_export_paths_sync, query_parent)
+        return JSONResponse(data)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -261,7 +270,7 @@ async def create_folder(request):
         clean_folder = folder_name.strip().replace('/', '-').replace('\\', '-')
         full_path = unicodedata.normalize("NFC", os.path.join(os.path.abspath(os.path.expanduser(parent_dir)), clean_folder))
 
-        os.makedirs(full_path, exist_ok=True)
+        await asyncio.to_thread(os.makedirs, full_path, exist_ok=True)
         return JSONResponse({
             "success": True,
             "folder_path": full_path,
@@ -280,7 +289,7 @@ async def save_notebook_mapping(request):
         if not notebook or not path:
             return JSONResponse({"error": "Parametri 'notebook' o 'path' mancanti."}, status_code=400)
 
-        save_mapping(notebook, path)
+        await asyncio.to_thread(save_mapping, notebook, path)
         return JSONResponse({
             "success": True,
             "message": f"Mappatura salvata con successo per {notebook}!"
@@ -309,34 +318,40 @@ async def browse_folder(request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+def _scan_icloud_files_sync(query_parent: Optional[str]) -> Dict[str, Any]:
+    """Scansione ricorsiva sincrona dei quaderni Goodnotes su iCloud Drive."""
+    mappings = load_mappings()
+    saved_parent = mappings.get("__PARENT_SEARCH_DIR__")
+    parent_dir = query_parent or saved_parent or get_parent_search_dir()
+    expanded_parent = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(parent_dir)))
+
+    found_files = []
+    if os.path.exists(expanded_parent) and os.path.isdir(expanded_parent):
+        for root, dirs, files in os.walk(expanded_parent):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for f in files:
+                if f.lower().endswith('.goodnotes'):
+                    full_path = unicodedata.normalize("NFC", os.path.join(root, f))
+                    rel_path = unicodedata.normalize("NFC", os.path.relpath(full_path, expanded_parent))
+                    size_mb = round(os.path.getsize(full_path) / (1024 * 1024), 2)
+                    mtime = os.path.getmtime(full_path)
+                    found_files.append({
+                        "name": f,
+                        "relative_path": rel_path,
+                        "absolute_path": full_path,
+                        "size_mb": size_mb,
+                        "modified": datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
+                    })
+
+    found_files.sort(key=lambda x: x["modified"], reverse=True)
+    return {"files": found_files, "parent_dir": parent_dir}
+
 async def get_icloud_files(request):
     """Elenca i file .goodnotes disponibili nella cartella genitore iCloud."""
     try:
-        mappings = load_mappings()
-        saved_parent = mappings.get("__PARENT_SEARCH_DIR__")
-        parent_dir = request.query_params.get("parent_search_dir") or saved_parent or get_parent_search_dir()
-        expanded_parent = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(parent_dir)))
-
-        found_files = []
-        if os.path.exists(expanded_parent) and os.path.isdir(expanded_parent):
-            for root, dirs, files in os.walk(expanded_parent):
-                dirs[:] = [d for d in dirs if not d.startswith('.')]
-                for f in files:
-                    if f.lower().endswith('.goodnotes'):
-                        full_path = unicodedata.normalize("NFC", os.path.join(root, f))
-                        rel_path = unicodedata.normalize("NFC", os.path.relpath(full_path, expanded_parent))
-                        size_mb = round(os.path.getsize(full_path) / (1024 * 1024), 2)
-                        mtime = os.path.getmtime(full_path)
-                        found_files.append({
-                            "name": f,
-                            "relative_path": rel_path,
-                            "absolute_path": full_path,
-                            "size_mb": size_mb,
-                            "modified": datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
-                        })
-
-        found_files.sort(key=lambda x: x["modified"], reverse=True)
-        return JSONResponse({"files": found_files, "parent_dir": parent_dir})
+        query_parent = request.query_params.get("parent_search_dir")
+        data = await asyncio.to_thread(_scan_icloud_files_sync, query_parent)
+        return JSONResponse(data)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -349,7 +364,8 @@ async def import_local_file(request):
             return JSONResponse({"error": "Parametro 'file_path' mancante."}, status_code=400)
 
         expanded_path = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(file_path)))
-        if not os.path.exists(expanded_path):
+        exists = await asyncio.to_thread(os.path.exists, expanded_path)
+        if not exists:
             return JSONResponse({"error": f"Il file specificato non esiste: {file_path}"}, status_code=404)
 
         return JSONResponse({
@@ -358,6 +374,11 @@ async def import_local_file(request):
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+def _write_env_file_sync(api_key: str) -> None:
+    """Scrittura sincrona atomica della chiave nel file .env."""
+    with open(ENV_FILE_PATH, 'w', encoding='utf-8') as env_file:
+        env_file.write(f"GEMINI_API_KEY={api_key}\n")
 
 async def save_config(request):
     """Salva la GEMINI_API_KEY nel file .env assoluto dopo verifica online."""
@@ -368,10 +389,7 @@ async def save_config(request):
             return JSONResponse({"error": "Parametro 'api_key' vuoto o mancante."}, status_code=400)
 
         is_valid = await asyncio.to_thread(validate_gemini_key, api_key)
-
-        with open(ENV_FILE_PATH, 'w', encoding='utf-8') as env_file:
-            env_file.write(f"GEMINI_API_KEY={api_key}\n")
-
+        await asyncio.to_thread(_write_env_file_sync, api_key)
         os.environ["GEMINI_API_KEY"] = api_key
 
         if is_valid:
@@ -426,14 +444,44 @@ async def play_audio_track(request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-async def serve_index(request):
-    """Serve la dashboard HTML front-end (index.html)."""
+def _reveal_in_finder_sync(target_path: str) -> None:
+    """Esegue il comando macOS 'open' per rivelare file (-R) o aprire cartelle nel Finder."""
+    expanded = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(target_path)))
+    if os.path.isfile(expanded):
+        subprocess.run(["open", "-R", expanded], check=True)
+    else:
+        subprocess.run(["open", expanded], check=True)
+
+async def reveal_finder(request):
+    """Apre il file o la cartella specificata nel Finder nativo di macOS."""
+    try:
+        body = await request.json()
+        target_path = body.get("path")
+        if not target_path:
+            return JSONResponse({"error": "Parametro 'path' mancante."}, status_code=400)
+
+        expanded_path = unicodedata.normalize("NFC", os.path.abspath(os.path.expanduser(target_path)))
+        path_exists = await asyncio.to_thread(os.path.exists, expanded_path)
+        if not path_exists:
+            return JSONResponse({"error": f"Percorso non trovato su disco: {target_path}"}, status_code=404)
+
+        await asyncio.to_thread(_reveal_in_finder_sync, expanded_path)
+        return JSONResponse({"success": True, "revealed": target_path})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+def _read_index_sync() -> Optional[str]:
     index_path = get_resource_path("index.html")
     if not os.path.exists(index_path):
-        return HTMLResponse("<h1>index.html non trovato nel percorso delle risorse!</h1>", status_code=404)
-
+        return None
     with open(index_path, 'r', encoding='utf-8') as f:
-        html_content = f.read()
+        return f.read()
+
+async def serve_index(request):
+    """Serve la dashboard HTML front-end (index.html)."""
+    html_content = await asyncio.to_thread(_read_index_sync)
+    if html_content is None:
+        return HTMLResponse("<h1>index.html non trovato nel percorso delle risorse!</h1>", status_code=404)
     return HTMLResponse(html_content)
 
 # Registrazione dichiarativa delle rotte
@@ -450,6 +498,7 @@ routes = [
     Route("/api/icloud_files", get_icloud_files, methods=["GET"]),
     Route("/api/import_local", import_local_file, methods=["POST"]),
     Route("/api/audio/play", play_audio_track, methods=["GET"]),
+    Route("/api/reveal_finder", reveal_finder, methods=["POST"]),
     Route("/", serve_index, methods=["GET"]),
     Mount("/webapp", app=StaticFiles(directory=get_resource_path("webapp"), html=True), name="webapp"),
 ]
