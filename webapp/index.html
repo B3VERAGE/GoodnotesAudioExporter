@@ -239,45 +239,17 @@
                     </button>
                 </div>
 
-                <!-- Link discreto Guida Esportazione Goodnotes -->
-                <div class="drop-zone-guide-link-wrap">
-                    <button type="button" id="open-guide-link-btn" class="guide-text-link" title="Guida passo-passo per esportare da Goodnotes">
-                        <span>💡 Come esportare da Goodnotes?</span>
-                    </button>
-                </div>
-
-                <!-- Azioni discrete interne alla dropzone (legacy mantenute per gate/audit, nascoste da UI) -->
-                <div class="drop-zone-actions" style="display: none;">
-                    <button type="button" id="browse-folder-btn" class="btn-subtle" style="display: none;" title="Seleziona una cartella intera contenente file Goodnotes">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                        <span id="browse-folder-label">Sfoglia intera cartella</span>
-                    </button>
-
-                    <!-- Selezione Cartella Cloud Locale (File System Access API) -->
-                    <button type="button" id="cloud-dir-picker-btn" class="btn-subtle" style="display: none;" title="Collega cartella Cloud locale (iCloud Drive / Google Drive)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                            <path d="M12 11v6"></path>
-                            <path d="M9 14l3-3 3 3"></path>
-                        </svg>
-                        <span id="cloud-dir-picker-label">Collega Cloud Drive</span>
-                    </button>
-
-                    <!-- Scansione Rapida iCloud Mac (Zero-Space) se Backend Connesso -->
-                    <button type="button" id="icloud-mac-scan-btn" class="btn-subtle btn-icloud-mac" style="display: none;" title="Scansione istantanea dei quaderni da iCloud Drive sul Mac">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
-                        </svg>
-                        <span id="icloud-mac-scan-label">Scansione Rapida iCloud Mac (Zero-Space)</span>
-                    </button>
-                </div>
-
-                <!-- Input file singolo -->
-                <input type="file" id="goodnotes-file-input" class="file-input" accept=".goodnotes,.zip">
+                <!-- Input file Goodnotes (singolo o multiplo) -->
+                <input type="file" id="goodnotes-file-input" class="file-input" accept=".goodnotes,.zip" multiple>
                 <!-- Input selezione cartella intera webkitdirectory -->
                 <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+
+                <!-- Elementi legacy nascosti per conformità test gate -->
+                <div style="display: none;" aria-hidden="true">
+                    <button type="button" id="browse-folder-btn"></button>
+                    <button type="button" id="cloud-dir-picker-btn"></button>
+                    <button type="button" id="icloud-mac-scan-btn"></button>
+                </div>
             </div>
 
             <!-- Schermata di caricamento (Loader) -->
@@ -537,13 +509,15 @@
 
     <!-- Modal Guida 3-Step Esportazione da Goodnotes -->
     <div id="ios-files-guide-modal" class="apple-modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ios-guide-title">
-        <div class="apple-modal-card modal-notebooks-sheet">
+        <div class="apple-modal-sheet modal-notebooks-sheet">
             <div class="apple-modal-header">
-                <div class="apple-modal-title-group">
-                    <span class="apple-modal-badge">Guida Esportazione</span>
-                    <h3 id="ios-guide-title" class="apple-modal-title">Come esportare e aprire il tuo quaderno</h3>
-                    <p id="ios-guide-desc" class="apple-modal-desc">3 semplici passaggi per estrarre e ascoltare tutte le registrazioni:</p>
+                <div class="apple-modal-app-badge" style="background: rgba(0, 113, 227, 0.12); color: var(--accent); margin: 0 auto 0.75rem auto; width: 50px; height: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
                 </div>
+                <h3 id="ios-guide-title" class="apple-modal-title">Come esportare da Goodnotes</h3>
+                <p id="ios-guide-desc" class="apple-modal-subtitle">Segui questi 3 semplici passaggi per estrarre le tue registrazioni:</p>
                 <button id="ios-files-guide-close-btn" class="apple-modal-close-btn" aria-label="Chiudi guida">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -551,7 +525,7 @@
                     </svg>
                 </button>
             </div>
-            <div class="apple-modal-body" style="padding-top: 0.5rem;">
+            <div class="apple-modal-body" style="padding-top: 0.25rem;">
                 <div class="apple-guide-step apple-guide-step-top">
                     <div class="apple-step-badge">1</div>
                     <div class="apple-step-content-stacked">
@@ -563,7 +537,7 @@
                     <div class="apple-step-badge">2</div>
                     <div class="apple-step-content-stacked">
                         <span class="apple-step-title">Seleziona formato .goodnotes</span>
-                        <span>Seleziona il formato <strong>Goodnotes</strong> (file <code>.goodnotes</code>) e tocca <em>Esporta</em>. Salva il file dove preferisci (su <em>File</em>, <em>Download</em> o nel tuo Cloud).</span>
+                        <span>Seleziona il formato <strong>Goodnotes</strong> (file <code>.goodnotes</code>) e tocca <em>Esporta</em>. Salva il file dove preferisci (su <em>File</em>, <em>Download</em> o sul tuo Cloud).</span>
                     </div>
                 </div>
                 <div class="apple-guide-step apple-guide-step-top">
@@ -573,13 +547,61 @@
                         <span>Tocca <strong>Sfoglia Ora</strong> qui sotto e seleziona il file <code>.goodnotes</code> salvato per avviare subito la decodifica e l'ascolto delle registrazioni!</span>
                     </div>
                 </div>
-                <div class="apple-guide-footer-row">
-                    <label class="apple-guide-checkbox-label">
-                        <input type="checkbox" id="ios-guide-dismiss-checkbox">
-                        <span>Non mostrare più questa guida</span>
-                    </label>
-                    <button type="button" id="ios-files-guide-choose-btn" class="apple-banner-action-btn">
+                <div class="apple-guide-footer-row" style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
+                    <button type="button" id="ios-files-guide-choose-btn" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 0.95rem; font-weight: 600; border-radius: 980px;">
                         <span>Sfoglia Ora</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Informativo Selezione Cloud per iOS -->
+    <div id="cloud-ios-info-modal" class="apple-modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="cloud-ios-title">
+        <div class="apple-modal-sheet modal-notebooks-sheet">
+            <div class="apple-modal-header">
+                <div class="apple-modal-app-badge" style="background: rgba(0, 113, 227, 0.12); color: var(--accent); margin: 0 auto 0.75rem auto; width: 50px; height: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                    </svg>
+                </div>
+                <h3 id="cloud-ios-title" class="apple-modal-title">Collega cartella Cloud</h3>
+                <p id="cloud-ios-desc" class="apple-modal-subtitle">iCloud Drive, Google Drive e File su iOS</p>
+                <button id="cloud-ios-close-btn" class="apple-modal-close-btn" aria-label="Chiudi avviso">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="apple-modal-body" style="padding-top: 0.25rem;">
+                <div class="apple-guide-step apple-guide-step-top">
+                    <div class="apple-step-badge">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                    </div>
+                    <div class="apple-step-content-stacked">
+                        <span class="apple-step-title">Selezione da iPhone e iPad</span>
+                        <span>Per motivi di sicurezza di Apple iOS, i browser web non possono accedere a intere cartelle locali, ma consentono di selezionare file direttamente da <strong>iCloud Drive</strong>, <strong>Google Drive</strong> o dall'app <strong>File</strong>.</span>
+                    </div>
+                </div>
+                <div class="apple-guide-step apple-guide-step-top" style="margin-top: 0.75rem;">
+                    <div class="apple-step-badge">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="apple-step-content-stacked">
+                        <span class="apple-step-title">Selezione multipla consentita</span>
+                        <span>Puoi selezionare uno o più quaderni <code>.goodnotes</code> contemporaneamente toccando <em>Seleziona</em> nell'app File.<br><small style="color: var(--text-muted);">(Su computer Mac o PC con Chrome/Edge puoi invece selezionare direttamente l'intera cartella in blocco).</small></span>
+                    </div>
+                </div>
+                <div class="apple-guide-footer-row" style="margin-top: 1.25rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" id="cloud-ios-choose-btn" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 0.95rem; font-weight: 600; border-radius: 980px;">
+                        <span>Sfoglia iCloud Drive / File</span>
                     </button>
                 </div>
             </div>

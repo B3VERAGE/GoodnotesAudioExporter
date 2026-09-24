@@ -65,8 +65,9 @@ const cloudPersistentRescanBtn = document.getElementById('cloud-persistent-resca
 const iosFilesGuideModal = document.getElementById('ios-files-guide-modal');
 const iosFilesGuideChooseBtn = document.getElementById('ios-files-guide-choose-btn');
 const iosFilesGuideCloseBtn = document.getElementById('ios-files-guide-close-btn');
-const openGuideLinkBtn = document.getElementById('open-guide-link-btn');
-const iosGuideDismissCheckbox = document.getElementById('ios-guide-dismiss-checkbox');
+const cloudIosInfoModal = document.getElementById('cloud-ios-info-modal');
+const cloudIosChooseBtn = document.getElementById('cloud-ios-choose-btn');
+const cloudIosCloseBtn = document.getElementById('cloud-ios-close-btn');
 
 // Supporto File System Access API
 const supportsDirectoryPicker = typeof window.showDirectoryPicker === 'function';
@@ -1258,7 +1259,7 @@ async function processGoodnotesFile(file) {
     }
 }
 
-// Gestione selezione intera cartella webkitdirectory
+// Gestione selezione intera cartella webkitdirectory o file multipli
 function handleFolderSelection(files) {
     if (!files || files.length === 0) return;
     const l = TRANSLATIONS[currentLang];
@@ -1276,9 +1277,39 @@ function handleFolderSelection(files) {
     if (validFiles.length === 1) {
         processGoodnotesFile(validFiles[0]);
     } else {
-        // Se ce ne sono molteplici, avvia il primo e notifica l'utente
-        console.log(`[Folder] Rilevati ${validFiles.length} quaderni. Apertura di ${validFiles[0].name}`);
-        processGoodnotesFile(validFiles[0]);
+        // Se ce ne sono molteplici, mostra l'elenco nel modal per la scelta dell'utente
+        if (icloudNotebooksModal) {
+            const titleEl = document.getElementById('icloud-modal-title');
+            const descEl = document.getElementById('icloud-modal-desc');
+            if (titleEl) titleEl.innerText = `${validFiles.length} Quaderni Rilevati`;
+            if (descEl) descEl.innerText = 'Seleziona quale quaderno desideri estrarre e ascoltare:';
+
+            icloudNotebooksModal.style.display = 'flex';
+            if (icloudNotebooksList) {
+                icloudNotebooksList.innerHTML = '';
+                validFiles.forEach(f => {
+                    const card = document.createElement('div');
+                    card.className = 'icloud-notebook-card';
+                    const sizeMb = (f.size / (1024 * 1024)).toFixed(1);
+                    card.innerHTML = `
+                        <div class="icloud-notebook-details">
+                            <div class="icloud-notebook-name">${f.name.replace(/\.goodnotes$/i, '')}</div>
+                            <div class="icloud-notebook-meta">
+                                <span>${sizeMb} MB</span>
+                            </div>
+                        </div>
+                        <button class="apple-btn-open-notebook">Apri</button>
+                    `;
+                    card.querySelector('.apple-btn-open-notebook').addEventListener('click', () => {
+                        icloudNotebooksModal.style.display = 'none';
+                        processGoodnotesFile(f);
+                    });
+                    icloudNotebooksList.appendChild(card);
+                });
+            }
+        } else {
+            processGoodnotesFile(validFiles[0]);
+        }
     }
 }
 
@@ -1576,19 +1607,14 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 dropZone.addEventListener('click', (e) => {
-    // Non propagare se si è cliccato sui bottoni d'azione o sul link della guida
+    // Non propagare se si è cliccato sui bottoni d'azione
     if (e.target.closest('#browse-folder-btn') || 
         e.target.closest('#unified-browse-btn') || 
         e.target.closest('#unified-cloud-btn') || 
         e.target.closest('#cloud-dir-picker-btn') || 
-        e.target.closest('#icloud-mac-scan-btn') ||
-        e.target.closest('#open-guide-link-btn')) return;
+        e.target.closest('#icloud-mac-scan-btn')) return;
 
-    const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
-    if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
-        if (iosGuideDismissCheckbox) {
-            iosGuideDismissCheckbox.checked = false;
-        }
+    if (iosFilesGuideModal) {
         iosFilesGuideModal.style.display = 'flex';
         return;
     }
@@ -1596,8 +1622,12 @@ dropZone.addEventListener('click', (e) => {
 });
 
 fileInput.addEventListener('change', () => {
-    if (fileInput.files.length > 0) {
-        processGoodnotesFile(fileInput.files[0]);
+    if (fileInput.files && fileInput.files.length > 0) {
+        if (fileInput.files.length === 1) {
+            processGoodnotesFile(fileInput.files[0]);
+        } else {
+            handleFolderSelection(fileInput.files);
+        }
     }
 });
 
@@ -2007,23 +2037,10 @@ function isIosOrIpad() {
 if (unifiedBrowseBtn) {
     unifiedBrowseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (isIosOrIpad()) {
-            const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
-            if (iosFilesGuideModal && !guideDismissed) {
-                if (iosGuideDismissCheckbox) {
-                    iosGuideDismissCheckbox.checked = false;
-                }
-                iosFilesGuideModal.style.display = 'flex';
-                return;
-            }
-            fileInput.click();
+        if (iosFilesGuideModal) {
+            iosFilesGuideModal.style.display = 'flex';
         } else {
-            // Su desktop apri il selettore cartella (o file come fallback)
-            if (folderInput) {
-                folderInput.click();
-            } else {
-                fileInput.click();
-            }
+            fileInput.click();
         }
     });
 }
@@ -2035,44 +2052,15 @@ if (unifiedCloudBtn) {
             openICloudNotebooksModal();
         } else if (supportsDirectoryPicker) {
             handleCloudDirectoryPicker();
+        } else if (!isIosOrIpad() && folderInput) {
+            folderInput.click();
         } else {
-            // Su iOS / Safari mobile / browser senza File System Access API:
-            // L'app File di iOS gestisce direttamente iCloud Drive, Google Drive, OneDrive, ecc.
-            // Nessun banner rosso: apri direttamente il selettore file o la guida se non dismessa.
-            const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
-            if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
-                if (iosGuideDismissCheckbox) {
-                    iosGuideDismissCheckbox.checked = false;
-                }
-                iosFilesGuideModal.style.display = 'flex';
-                return;
+            // Su iOS / iPad: mostra il modal esplicativo e poi apri la selezione multipla iCloud Drive / File
+            if (cloudIosInfoModal) {
+                cloudIosInfoModal.style.display = 'flex';
+            } else {
+                fileInput.click();
             }
-            fileInput.click();
-        }
-    });
-}
-
-// Link discreto per aprire la guida in ogni momento
-if (openGuideLinkBtn) {
-    openGuideLinkBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (iosGuideDismissCheckbox) {
-            iosGuideDismissCheckbox.checked = localStorage.getItem('gn_guide_dismissed') === 'true';
-        }
-        if (iosFilesGuideModal) {
-            iosFilesGuideModal.style.display = 'flex';
-        }
-    });
-}
-
-// Checkbox "Non mostrare più questa guida"
-if (iosGuideDismissCheckbox) {
-    iosGuideDismissCheckbox.addEventListener('change', () => {
-        if (iosGuideDismissCheckbox.checked) {
-            localStorage.setItem('gn_guide_dismissed', 'true');
-        } else {
-            localStorage.removeItem('gn_guide_dismissed');
         }
     });
 }
@@ -2080,9 +2068,6 @@ if (iosGuideDismissCheckbox) {
 // Modal Guida: Azione "Sfoglia Ora"
 if (iosFilesGuideChooseBtn) {
     iosFilesGuideChooseBtn.addEventListener('click', () => {
-        if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
-            localStorage.setItem('gn_guide_dismissed', 'true');
-        }
         if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
         fileInput.click();
     });
@@ -2091,9 +2076,6 @@ if (iosFilesGuideChooseBtn) {
 // Modal Guida: Chiusura tramite bottone "X"
 if (iosFilesGuideCloseBtn) {
     iosFilesGuideCloseBtn.addEventListener('click', () => {
-        if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
-            localStorage.setItem('gn_guide_dismissed', 'true');
-        }
         if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
     });
 }
@@ -2102,10 +2084,31 @@ if (iosFilesGuideCloseBtn) {
 if (iosFilesGuideModal) {
     iosFilesGuideModal.addEventListener('click', (e) => {
         if (e.target === iosFilesGuideModal) {
-            if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
-                localStorage.setItem('gn_guide_dismissed', 'true');
-            }
             iosFilesGuideModal.style.display = 'none';
+        }
+    });
+}
+
+// Modal Informativo iOS Cloud: Azione "Sfoglia iCloud Drive / File"
+if (cloudIosChooseBtn) {
+    cloudIosChooseBtn.addEventListener('click', () => {
+        if (cloudIosInfoModal) cloudIosInfoModal.style.display = 'none';
+        fileInput.click();
+    });
+}
+
+// Modal Informativo iOS Cloud: Chiusura tramite "X"
+if (cloudIosCloseBtn) {
+    cloudIosCloseBtn.addEventListener('click', () => {
+        if (cloudIosInfoModal) cloudIosInfoModal.style.display = 'none';
+    });
+}
+
+// Modal Informativo iOS Cloud: Chiusura toccando lo sfondo (backdrop)
+if (cloudIosInfoModal) {
+    cloudIosInfoModal.addEventListener('click', (e) => {
+        if (e.target === cloudIosInfoModal) {
+            cloudIosInfoModal.style.display = 'none';
         }
     });
 }
