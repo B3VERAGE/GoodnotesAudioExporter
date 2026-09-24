@@ -19,7 +19,8 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from starlette.responses import JSONResponse, HTMLResponse, FileResponse
-from starlette.routing import Route
+from starlette.routing import Route, Mount
+from starlette.staticfiles import StaticFiles
 
 from backend.config import (
     WORKSPACE_ROOT,
@@ -450,4 +451,5 @@ routes = [
     Route("/api/import_local", import_local_file, methods=["POST"]),
     Route("/api/audio/play", play_audio_track, methods=["GET"]),
     Route("/", serve_index, methods=["GET"]),
+    Mount("/webapp", app=StaticFiles(directory=get_resource_path("webapp"), html=True), name="webapp"),
 ]

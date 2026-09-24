@@ -1,10 +1,13 @@
 // ================================================================================
 // GoodNotes 6 Audio Exporter & Renamer - Client-Side Logic (100% Offline PWA)
+// Milestone 3: Apple HIG Frontend, Tactile Motion, Floating Audio Player & IDB Library
 // ================================================================================
 
-// Riferimenti agli elementi HTML
+// Riferimenti agli elementi HTML principali
 const dropZone = document.getElementById('file-drop-zone');
 const fileInput = document.getElementById('goodnotes-file-input');
+const folderInput = document.getElementById('folder-input');
+const browseFolderBtn = document.getElementById('browse-folder-btn');
 const loader = document.getElementById('app-loader');
 const loaderStatus = document.getElementById('loader-status');
 const loaderProgress = document.getElementById('loader-progress');
@@ -17,30 +20,453 @@ const downloadFilesBtn = document.getElementById('download-files-btn');
 const errorAlert = document.getElementById('error-alert');
 const errorMessage = document.getElementById('error-message');
 
+// Riferimenti alla Sezione Libreria Offline
+const librarySection = document.getElementById('library-section');
+const libraryToggleBtn = document.getElementById('library-toggle-btn');
+const libraryBadgeCount = document.getElementById('library-badge-count');
+const libraryCloseBtn = document.getElementById('library-close-btn');
+const libraryList = document.getElementById('library-list');
+
+// Riferimenti al Floating Audio Player
+const floatingPlayer = document.getElementById('floating-audio-player');
+const playerTrackTitle = document.getElementById('player-track-title');
+const playerNotebookName = document.getElementById('player-notebook-name');
+const playerCurrentTime = document.getElementById('player-current-time');
+const playerTotalTime = document.getElementById('player-total-time');
+const playerScrubber = document.getElementById('player-scrubber');
+const playerProgressFill = document.getElementById('player-progress-fill');
+const playerPlayBtn = document.getElementById('player-play-btn');
+const playerPlaySvg = document.getElementById('player-play-svg');
+const playerPauseSvg = document.getElementById('player-pause-svg');
+const playerSkipBackBtn = document.getElementById('player-skip-back-btn');
+const playerSkipForwardBtn = document.getElementById('player-skip-forward-btn');
+const playerShareBtn = document.getElementById('player-share-btn');
+const playerCloseBtn = document.getElementById('player-close-btn');
+const speedPills = document.querySelectorAll('.speed-pill');
+
+// Riferimenti Milestone 4 (Cloud Sync & Backend Bridge)
+const connectionStatusPill = document.getElementById('connection-status-pill');
+const connectionStatusText = document.getElementById('connection-status-text');
+const backendQuickBanner = document.getElementById('backend-quick-banner');
+const backendQuickScanActionBtn = document.getElementById('backend-quick-scan-action-btn');
+const icloudMacScanBtn = document.getElementById('icloud-mac-scan-btn');
+const cloudDirPickerBtn = document.getElementById('cloud-dir-picker-btn');
+const icloudNotebooksModal = document.getElementById('icloud-notebooks-modal');
+const icloudModalCloseBtn = document.getElementById('icloud-modal-close');
+const icloudSearchInput = document.getElementById('icloud-search-input');
+const icloudNotebooksList = document.getElementById('icloud-notebooks-list');
+
+let backendConnectionState = { connected: false, origin: null, data: null };
+let icloudCachedNotebooks = [];
+
 // Stato dell'applicazione in memoria
 let activeNotebookData = null;
 let currentLang = 'it';
-let currentAudio = null;
-let currentPlayingIndex = null;
+
+// ================================================================================
+// GESTORE DEL FLOATING AUDIO PLAYER (APPLE HIG & TACTILE AUDIO PLAYBACK)
+// ================================================================================
+
+class FloatingPlayerManager {
+    constructor() {
+        this.audio = new Audio();
+        this.currentTrack = null;
+        this.currentTrackIndex = null;
+        this.tracksList = [];
+        this.notebookName = '';
+        this.playbackRate = 1.0;
+        this.isUserScrubbing = false;
+        this.currentAudioUrl = null;
+
+        this.initEventListeners();
+    }
+
+    initEventListeners() {
+        // Aggiornamento tempo e avanzamento continuo
+        this.audio.addEventListener('timeupdate', () => {
+            if (!this.isUserScrubbing && this.audio.duration) {
+                const current = this.audio.currentTime;
+                const duration = this.audio.duration;
+                const percent = (current / duration) * 100;
+
+                playerCurrentTime.innerText = this.formatTime(current);
+                playerScrubber.value = percent;
+                playerProgressFill.style.width = `${percent}%`;
+
+                this.updateMediaSessionPositionState();
+            }
+        });
+
+        // Metadati caricati (durata totale esatta)
+        this.audio.addEventListener('loadedmetadata', () => {
+            if (this.audio.duration) {
+                playerTotalTime.innerText = this.formatTime(this.audio.duration);
+                this.updateMediaSessionPositionState();
+            }
+        });
+
+        // Fine traccia: passa alla successiva o resetta
+        this.audio.addEventListener('ended', () => {
+            if (this.currentTrackIndex !== null && this.currentTrackIndex + 1 < this.tracksList.length) {
+                this.playTrackAtIndex(this.currentTrackIndex + 1);
+            } else {
+                this.setPlayState(false);
+                playerScrubber.value = 0;
+                playerProgressFill.style.width = '0%';
+                playerCurrentTime.innerText = '0:00';
+            }
+        });
+
+        // Gestione errori di riproduzione
+        this.audio.addEventListener('error', (e) => {
+            console.error('[AudioPlayer] Errore riproduzione:', e);
+            this.setPlayState(false);
+        });
+
+        // Scrubber interattivo: input continuo durante il trascinamento touch / mouse
+        playerScrubber.addEventListener('input', () => {
+            this.isUserScrubbing = true;
+            if (this.audio.duration) {
+                const targetTime = (playerScrubber.value / 100) * this.audio.duration;
+                playerCurrentTime.innerText = this.formatTime(targetTime);
+                playerProgressFill.style.width = `${playerScrubber.value}%`;
+            }
+        });
+
+        // Rilascio scrubber: seek istantaneo preciso
+        playerScrubber.addEventListener('change', () => {
+            if (this.audio.duration) {
+                const targetTime = (playerScrubber.value / 100) * this.audio.duration;
+                this.audio.currentTime = targetTime;
+            }
+            this.isUserScrubbing = false;
+        });
+
+        // Play / Pausa
+        playerPlayBtn.addEventListener('click', () => {
+            this.togglePlayPause();
+        });
+
+        // Salta indietro 15 secondi
+        playerSkipBackBtn.addEventListener('click', () => {
+            this.skip(-15);
+        });
+
+        // Salta avanti 15 secondi
+        playerSkipForwardBtn.addEventListener('click', () => {
+            this.skip(15);
+        });
+
+        // Selettore velocità pillole (0.75x, 1x, 1.25x, 1.5x, 2x)
+        speedPills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                const speed = parseFloat(pill.dataset.speed || '1');
+                this.setPlaybackRate(speed);
+            });
+        });
+
+        // Condivisione con Web Share API o fallback
+        playerShareBtn.addEventListener('click', () => {
+            this.shareCurrentTrack();
+        });
+
+        // Chiusura player
+        playerCloseBtn.addEventListener('click', () => {
+            this.closePlayer();
+        });
+    }
+
+    formatTime(seconds) {
+        if (!seconds || isNaN(seconds) || seconds < 0) return '0:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    setPlaybackRate(rate) {
+        this.playbackRate = rate;
+        this.audio.playbackRate = rate;
+        speedPills.forEach(p => {
+            p.classList.toggle('active', parseFloat(p.dataset.speed) === rate);
+        });
+    }
+
+    skip(seconds) {
+        if (!this.audio.duration) return;
+        const newTime = Math.min(Math.max(0, this.audio.currentTime + seconds), this.audio.duration);
+        this.audio.currentTime = newTime;
+        const percent = (newTime / this.audio.duration) * 100;
+        playerScrubber.value = percent;
+        playerProgressFill.style.width = `${percent}%`;
+        playerCurrentTime.innerText = this.formatTime(newTime);
+        this.updateMediaSessionPositionState();
+    }
+
+    setPlayState(isPlaying) {
+        if (isPlaying) {
+            playerPlaySvg.style.display = 'none';
+            playerPauseSvg.style.display = 'block';
+            playerPlayBtn.setAttribute('title', 'Metti in pausa');
+        } else {
+            playerPlaySvg.style.display = 'block';
+            playerPauseSvg.style.display = 'none';
+            playerPlayBtn.setAttribute('title', 'Riproduci');
+        }
+
+        // Aggiorna icone nei singoli elementi della lista
+        if (this.currentTrackIndex !== null) {
+            const listBtn = document.getElementById(`play-btn-${this.currentTrackIndex}`);
+            if (listBtn) {
+                listBtn.innerHTML = isPlaying ? getPauseIconSvg() : getPlayIconSvg();
+            }
+            const itemElem = listBtn?.closest('.recording-item');
+            if (itemElem) {
+                itemElem.classList.toggle('is-playing', isPlaying);
+            }
+        }
+    }
+
+    togglePlayPause() {
+        if (!this.currentTrack) return;
+        if (this.audio.paused) {
+            this.audio.play().then(() => {
+                this.setPlayState(true);
+            }).catch(e => {
+                console.error('[AudioPlayer] Playback fallito:', e);
+            });
+        } else {
+            this.audio.pause();
+            this.setPlayState(false);
+        }
+    }
+
+    async playTrackAtIndex(index, tracksList = null, notebookName = '') {
+        if (tracksList) {
+            this.tracksList = tracksList;
+        }
+        if (notebookName) {
+            this.notebookName = notebookName;
+        }
+
+        if (!this.tracksList || !this.tracksList[index]) return;
+
+        // Se è la stessa traccia attualmente caricata, fai toggle
+        if (this.currentTrackIndex === index && this.currentTrack) {
+            this.togglePlayPause();
+            return;
+        }
+
+        // Resetta lo stato visivo della traccia precedente nella lista
+        if (this.currentTrackIndex !== null) {
+            const oldBtn = document.getElementById(`play-btn-${this.currentTrackIndex}`);
+            if (oldBtn) oldBtn.innerHTML = getPlayIconSvg();
+            const oldItem = oldBtn?.closest('.recording-item');
+            if (oldItem) oldItem.classList.remove('is-playing');
+        }
+
+        const track = this.tracksList[index];
+        this.currentTrack = track;
+        this.currentTrackIndex = index;
+
+        // Recupera il Blob audio (da memoria o da IndexedDB)
+        let blob = track.audioBlob;
+        if (!blob && track.fileData) {
+            blob = new Blob([track.fileData], { type: 'audio/mp4' });
+            track.audioBlob = blob;
+        }
+        if (!blob && typeof GoodnotesDB !== 'undefined' && track.id) {
+            try {
+                blob = await GoodnotesDB.getTrackAudioBlob(track.id);
+                track.audioBlob = blob;
+            } catch (err) {
+                console.warn('[AudioPlayer] Impossibile recuperare blob da IndexedDB:', err);
+            }
+        }
+        if (!blob && track.audioUrl) {
+            if (this.currentAudioUrl && this.currentAudioUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(this.currentAudioUrl);
+            }
+            this.currentAudioUrl = track.audioUrl;
+            this.audio.src = this.currentAudioUrl;
+            this.audio.playbackRate = this.playbackRate;
+
+            const titleText = track.cleanTitle || track.titleClean || track.filename;
+            playerTrackTitle.innerText = titleText;
+            playerNotebookName.innerText = this.notebookName || 'Goodnotes Audio';
+            playerCurrentTime.innerText = '0:00';
+            playerTotalTime.innerText = track.duration || '0:00';
+            playerScrubber.value = 0;
+            playerProgressFill.style.width = '0%';
+
+            floatingPlayer.style.display = 'block';
+            this.audio.play().then(() => {
+                this.setPlayState(true);
+                this.setupMediaSession();
+            }).catch(err => {
+                console.warn('[AudioPlayer] Autoplay bloccato:', err);
+                this.setPlayState(false);
+            });
+            return;
+        }
+
+        if (!blob) {
+            showError('Impossibile riprodurre la traccia: dati audio non disponibili.');
+            return;
+        }
+
+        // Libera URL blob precedente se esisteva
+        if (this.currentAudioUrl) {
+            URL.revokeObjectURL(this.currentAudioUrl);
+        }
+        this.currentAudioUrl = URL.createObjectURL(blob);
+        this.audio.src = this.currentAudioUrl;
+        this.audio.playbackRate = this.playbackRate;
+
+        // Aggiorna interfaccia utente del player
+        const titleText = track.cleanTitle || track.titleClean || track.filename;
+        playerTrackTitle.innerText = titleText;
+        playerNotebookName.innerText = this.notebookName || 'Goodnotes Audio';
+        playerCurrentTime.innerText = '0:00';
+        playerTotalTime.innerText = track.duration || '0:00';
+        playerScrubber.value = 0;
+        playerProgressFill.style.width = '0%';
+
+        // Mostra il floating player docked
+        floatingPlayer.style.display = 'block';
+
+        // Avvia riproduzione
+        this.audio.play().then(() => {
+            this.setPlayState(true);
+            this.setupMediaSession();
+        }).catch(err => {
+            console.warn('[AudioPlayer] Autoplay bloccato:', err);
+            this.setPlayState(false);
+        });
+    }
+
+    // Integrazione completa con Apple MediaSession API
+    setupMediaSession() {
+        if (!('mediaSession' in navigator) || !this.currentTrack) return;
+
+        const title = this.currentTrack.cleanTitle || this.currentTrack.filename;
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: title,
+            artist: 'Goodnotes',
+            album: this.notebookName || 'Lezioni Goodnotes',
+            artwork: [
+                { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+                { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+                { src: 'apple-touch-icon.png', sizes: '180x180', type: 'image/png' }
+            ]
+        });
+
+        // Controlli MediaSession
+        try {
+            navigator.mediaSession.setActionHandler('play', () => this.togglePlayPause());
+            navigator.mediaSession.setActionHandler('pause', () => this.togglePlayPause());
+            navigator.mediaSession.setActionHandler('seekbackward', () => this.skip(-15));
+            navigator.mediaSession.setActionHandler('seekforward', () => this.skip(15));
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+                if (details.seekTime !== undefined && this.audio.duration) {
+                    this.audio.currentTime = details.seekTime;
+                }
+            });
+            navigator.mediaSession.setActionHandler('previoustrack', () => {
+                if (this.currentTrackIndex > 0) {
+                    this.playTrackAtIndex(this.currentTrackIndex - 1);
+                }
+            });
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+                if (this.currentTrackIndex + 1 < this.tracksList.length) {
+                    this.playTrackAtIndex(this.currentTrackIndex + 1);
+                }
+            });
+        } catch (e) {
+            console.warn('[MediaSession] Handler parziale:', e);
+        }
+    }
+
+    updateMediaSessionPositionState() {
+        if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+        if (this.audio.duration && !isNaN(this.audio.duration) && this.audio.duration > 0) {
+            try {
+                navigator.mediaSession.setPositionState({
+                    duration: this.audio.duration,
+                    playbackRate: this.audio.playbackRate,
+                    position: Math.min(this.audio.currentTime, this.audio.duration)
+                });
+            } catch (e) {}
+        }
+    }
+
+    // Condivisione nativa Apple Web Share API
+    async shareCurrentTrack() {
+        if (!this.currentTrack) return;
+        const track = this.currentTrack;
+        let blob = track.audioBlob;
+        if (!blob && track.fileData) {
+            blob = new Blob([track.fileData], { type: 'audio/mp4' });
+        }
+
+        if (!blob) {
+            downloadSingleTrack(this.currentTrackIndex);
+            return;
+        }
+
+        const fileName = track.filename.endsWith('.m4a') ? track.filename : `${track.filename}.m4a`;
+        const file = new File([blob], fileName, { type: 'audio/mp4' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    files: [file],
+                    title: track.cleanTitle || track.filename,
+                    text: `Registrazione audio Goodnotes: ${track.cleanTitle || track.filename}`
+                });
+                return;
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.warn('[WebShare] Condivisione fallita, fallback su download:', err);
+                    downloadSingleTrack(this.currentTrackIndex);
+                }
+                return;
+            }
+        }
+
+        // Fallback su download
+        downloadSingleTrack(this.currentTrackIndex);
+    }
+
+    closePlayer() {
+        this.audio.pause();
+        this.setPlayState(false);
+        if (this.currentAudioUrl) {
+            URL.revokeObjectURL(this.currentAudioUrl);
+            this.currentAudioUrl = null;
+        }
+        this.currentTrack = null;
+        this.currentTrackIndex = null;
+        floatingPlayer.style.display = 'none';
+    }
+}
+
+// Istanza singleton del player
+const playerManager = new FloatingPlayerManager();
 
 // ================================================================================
 // COSTANTI, ACRONIMI E TABELLE DI RICONOSCIMENTO LINGUISTICO
 // ================================================================================
 
-// Acronimi medici da preservare rigorosamente in MAIUSCOLO
 const WHITELIST_ACRONYMS = new Set([
     "ECG", "BPCO", "SCA", "RCU", "CEC", "PAD", "RR", "IFP"
 ]);
 
-// Prefissi di materia noti (con due punti)
 const SUBJECT_PREFIXES = new Set([
     "CV:", "CC:", "CT:", "SMED:", "ANTROPO:", "POLM:"
 ]);
 
-// Vocali accentate italiane che devono essere RIGOROSAMENTE preservate da qualsiasi shift
 const ITALIAN_ACCENTED_CHARS = new Set(["à", "è", "é", "ì", "ò", "ù", "À", "È", "É", "Ì", "Ò", "Ù"]);
 
-// Parole e radici italiane comuni per determinare se il testo grezzo è già in chiaro
 const ITALIAN_STOPWORDS = new Set([
     "di", "del", "della", "delle", "dei", "degli", "il", "lo", "la", "i", "gli", "le",
     "un", "uno", "una", "e", "ed", "in", "su", "per", "con", "tra", "fra", "da", "dal",
@@ -50,7 +476,6 @@ const ITALIAN_STOPWORDS = new Set([
     "mortalita", "mortalità", "storia", "antica", "grecia", "morte", "inizio"
 ]);
 
-// Parole bersaglio per confermare l'effettiva cifratura Cesare (lunghezza >= 5)
 const CAESAR_TARGET_KEYWORDS = new Set([
     "aterosclerosi", "necrosi", "tumori", "vescica", "cistiti", "patologie",
     "polmonari", "ostruzione", "restrizione", "infettive", "cardiopatie",
@@ -58,7 +483,6 @@ const CAESAR_TARGET_KEYWORDS = new Set([
     "paratiroide", "ipertensione"
 ]);
 
-// Costante offset secondi tra 1 gennaio 1904 (Mac epoch) e 1 gennaio 1970 (Unix epoch)
 const MAC_TO_UNIX_OFFSET = 2082844800;
 
 // Dizionario delle traduzioni per internazionalizzazione (IT / EN)
@@ -68,6 +492,14 @@ const TRANSLATIONS = {
         subtitle: "Estrai, decifra e rinomina le tue lezioni audio in totale privacy",
         dropzoneTitle: "Trascina qui il tuo quaderno .goodnotes",
         dropzoneSubtitle: "oppure tocca per sfogliare i tuoi file",
+        browseFolder: "Sfoglia intera cartella",
+        libraryBtn: "Libreria",
+        libraryTitle: "Libreria Locale Offline",
+        librarySubtitle: "I quaderni e le registrazioni audio precedentemente estratti e memorizzati in locale",
+        libraryEmpty: "Nessun quaderno salvato in memoria locale. Trascina un file per iniziare.",
+        openNotebook: "Apri Quaderno",
+        deleteNotebook: "Elimina",
+        confirmDeleteNotebook: "Vuoi eliminare questo quaderno e le relative registrazioni dalla memoria locale?",
         loaderExtracting: "Lettura ed estrazione del pacchetto .goodnotes in corso...",
         loaderParsing: "Analisi del database index.events.pb...",
         loaderScanning: "Scansione dei file audio e analisi delle date...",
@@ -78,7 +510,8 @@ const TRANSLATIONS = {
         filesButton: "Scarica m4a singoli",
         unnamedRecording: "Registrazione Senza Nome",
         clipAudio: "Clip Audio",
-        errorInvalidFile: "File non valido. Si prega di trascinare esclusivamente un file di tipo .goodnotes o .zip.",
+        errorInvalidFile: "File non valido. Si prega di trascinare un file di tipo .goodnotes o .zip.",
+        errorNoFolderFiles: "Nessun file .goodnotes o .zip valido trovato nella cartella selezionata.",
         errorNoEvents: "Il file caricato non sembra un quaderno Goodnotes valido (manca index.events.pb).",
         errorNoFolder: "Nessuna cartella attachments trovata nel quaderno. Non ci sono registrazioni.",
         errorNoAudio: "Nessuna registrazione audio attiva trovata all'interno del quaderno.",
@@ -92,14 +525,47 @@ const TRANSLATIONS = {
         footerText: "Disegnato e sviluppato in locale al 100% offline. Sincronizzazione automatica con iCloud attiva.",
         downloadSingle: "Scarica traccia singola",
         downloadingSingle: "Download in corso: ",
-        playAudio: "Ascolta anteprima",
-        pauseAudio: "Pausa anteprima"
+        playAudio: "Ascolta traccia",
+        pauseAudio: "Metti in pausa",
+        pwaBannerBadge: "PWA Apple Light & Dark",
+        pwaBannerTitle: "Aggiungi a Schermata Home / Desktop",
+        pwaBannerDesc: "Usa l'app a schermo intero e offline in totale privacy.",
+        pwaInstallBtn: "Installa",
+        pwaDismissBtn: "Non ora",
+        pwaIosTitle: "Aggiungi a Schermata Home",
+        pwaIosDesc: "Installa l'app su iPhone o iPad per accedere direttamente dalla tua schermata Home in modalità standalone 100% offline.",
+        pwaIosStep1: "Tocca il pulsante Condividi",
+        pwaIosStep1Suffix: "nella barra inferiore di Safari.",
+        pwaIosStep2: "Scorri verso il basso e tocca \"Aggiungi alla schermata Home\"",
+        pwaIosStep3: "Conferma toccando \"Aggiungi\" in alto a destra. L'app apparirà sulla tua Home!",
+        pwaIosDismiss: "Ho capito",
+        statusStandalone: "Standalone Offline",
+        statusConnected: "Mac Backend Attivo",
+        statusPillTitleConnected: "Connesso al backend Mac (Zero-Space iCloud attivo)",
+        statusPillTitleStandalone: "Modalità di elaborazione attiva in locale nel browser (100% Offline)",
+        cloudDirPickerLabel: "Collega Cloud Drive",
+        icloudMacScanLabel: "Scansione Rapida iCloud Mac (Zero-Space)",
+        backendBannerTitle: "Backend Mac Rilevato",
+        backendBannerDesc: "Accedi direttamente ai quaderni di iCloud Drive senza dover fare drag & drop.",
+        backendBannerBtn: "Sfoglia Quaderni Mac",
+        icloudModalTitle: "Quaderni iCloud Drive (Mac)",
+        icloudModalDesc: "Seleziona un quaderno per estrarre e decodificare le registrazioni in memoria (Zero-Space).",
+        noICloudNotebooksFound: "Nessun quaderno .goodnotes trovato su iCloud Drive Mac.",
+        loadAndExtractBtn: "Carica ed Estrai"
     },
     en: {
         title: "GoodNotes Audio Exporter",
         subtitle: "Extract, decrypt and rename your audio lectures in total privacy",
         dropzoneTitle: "Drag and drop your .goodnotes notebook here",
         dropzoneSubtitle: "or tap to browse your files",
+        browseFolder: "Browse full folder",
+        libraryBtn: "Library",
+        libraryTitle: "Offline Local Library",
+        librarySubtitle: "Notebooks and audio recordings previously extracted and saved locally",
+        libraryEmpty: "No notebooks saved locally. Drag a file to get started.",
+        openNotebook: "Open Notebook",
+        deleteNotebook: "Delete",
+        confirmDeleteNotebook: "Do you want to delete this notebook and its recordings from local storage?",
         loaderExtracting: "Reading and extracting the .goodnotes package...",
         loaderParsing: "Analyzing the index.events.pb database...",
         loaderScanning: "Scanning audio files and analyzing dates...",
@@ -111,6 +577,7 @@ const TRANSLATIONS = {
         unnamedRecording: "Unnamed Recording",
         clipAudio: "Audio Clip",
         errorInvalidFile: "Invalid file. Please drag and drop a .goodnotes or .zip file only.",
+        errorNoFolderFiles: "No valid .goodnotes or .zip files found in selected folder.",
         errorNoEvents: "The uploaded file does not seem to be a valid Goodnotes notebook (missing index.events.pb).",
         errorNoFolder: "No attachments folder found in the notebook. There are no recordings.",
         errorNoAudio: "No active audio recordings found in the notebook.",
@@ -124,8 +591,33 @@ const TRANSLATIONS = {
         footerText: "Designed and developed 100% locally offline. Automatic iCloud sync active.",
         downloadSingle: "Download single track",
         downloadingSingle: "Downloading: ",
-        playAudio: "Play preview",
-        pauseAudio: "Pause preview"
+        playAudio: "Play track",
+        pauseAudio: "Pause",
+        pwaBannerBadge: "PWA Apple Light & Dark",
+        pwaBannerTitle: "Add to Home Screen / Desktop",
+        pwaBannerDesc: "Use the app in fullscreen and 100% offline in total privacy.",
+        pwaInstallBtn: "Install",
+        pwaDismissBtn: "Not now",
+        pwaIosTitle: "Add to Home Screen",
+        pwaIosDesc: "Install the app on iPhone or iPad to open directly from your Home Screen in 100% offline standalone mode.",
+        pwaIosStep1: "Tap the Share button",
+        pwaIosStep1Suffix: "in the bottom bar of Safari.",
+        pwaIosStep2: "Scroll down and tap \"Add to Home Screen\"",
+        pwaIosStep3: "Confirm by tapping \"Add\" in the top right. The app will appear on your Home Screen!",
+        pwaIosDismiss: "Got it",
+        statusStandalone: "Standalone Offline",
+        statusConnected: "Mac Backend Active",
+        statusPillTitleConnected: "Connected to Mac backend (Zero-Space iCloud active)",
+        statusPillTitleStandalone: "Processing active locally in browser (100% Offline)",
+        cloudDirPickerLabel: "Connect Cloud Drive",
+        icloudMacScanLabel: "Quick iCloud Mac Scan (Zero-Space)",
+        backendBannerTitle: "Mac Backend Detected",
+        backendBannerDesc: "Access notebooks directly from iCloud Drive without drag & drop.",
+        backendBannerBtn: "Browse Mac Notebooks",
+        icloudModalTitle: "iCloud Drive Notebooks (Mac)",
+        icloudModalDesc: "Select a notebook to extract and decode recordings in-memory (Zero-Space).",
+        noICloudNotebooksFound: "No .goodnotes notebooks found on Mac iCloud Drive.",
+        loadAndExtractBtn: "Load & Extract"
     }
 };
 
@@ -139,10 +631,21 @@ function applyLanguage(langCode) {
     document.getElementById('app-title').innerText = l.title;
     document.getElementById('app-subtitle').innerText = l.subtitle;
     
-    const dropzoneTitle = dropZone.querySelector('h3');
-    const dropzoneSubtitle = dropZone.querySelector('p');
+    const dropzoneTitle = document.getElementById('dropzone-title');
+    const dropzoneSubtitle = document.getElementById('dropzone-subtitle');
+    const browseFolderLabel = document.getElementById('browse-folder-label');
+    const libraryBtnLabel = document.getElementById('library-btn-label');
+    const libraryTitleElem = document.getElementById('library-title');
+    const librarySubtitleElem = document.getElementById('library-subtitle');
+    const footerTextElem = document.getElementById('footer-text');
+
     if (dropzoneTitle) dropzoneTitle.innerText = l.dropzoneTitle;
     if (dropzoneSubtitle) dropzoneSubtitle.innerText = l.dropzoneSubtitle;
+    if (browseFolderLabel) browseFolderLabel.innerText = l.browseFolder;
+    if (libraryBtnLabel) libraryBtnLabel.innerText = l.libraryBtn;
+    if (libraryTitleElem) libraryTitleElem.innerText = l.libraryTitle;
+    if (librarySubtitleElem) librarySubtitleElem.innerText = l.librarySubtitle;
+    if (footerTextElem) footerTextElem.innerText = l.footerText;
     
     const downloadZipBtn = document.getElementById('download-all-btn');
     const downloadM4aBtn = document.getElementById('download-files-btn');
@@ -161,782 +664,549 @@ function applyLanguage(langCode) {
         downloadM4aBtn.appendChild(document.createTextNode(' ' + l.filesButton));
     }
     
-    const footer = document.querySelector('.app-footer p');
-    if (footer) footer.innerText = l.footerText;
-    
+    const pwaTitle = document.getElementById('pwa-banner-title');
+    const pwaDesc = document.getElementById('pwa-banner-desc');
+    const pwaBtnText = document.getElementById('pwa-banner-btn-text');
+    const pwaHeaderLabel = document.getElementById('pwa-header-install-label');
+    const iosTitle = document.getElementById('ios-modal-title');
+    const iosDesc = document.getElementById('ios-modal-desc');
+    const iosDismiss = document.getElementById('pwa-ios-modal-dismiss');
+    const iosStep1 = document.getElementById('ios-step-1');
+    const iosStep2 = document.getElementById('ios-step-2');
+    const iosStep3 = document.getElementById('ios-step-3');
+
+    if (pwaTitle) pwaTitle.innerText = l.pwaBannerTitle;
+    if (pwaDesc) pwaDesc.innerText = l.pwaBannerDesc;
+    if (pwaBtnText) pwaBtnText.innerText = l.pwaInstallBtn;
+    if (pwaHeaderLabel) pwaHeaderLabel.innerText = l.pwaInstallBtn;
+    if (iosTitle) iosTitle.innerText = l.pwaIosTitle;
+    if (iosDesc) iosDesc.innerText = l.pwaIosDesc;
+    if (iosDismiss) iosDismiss.innerText = l.pwaIosDismiss;
+    if (iosStep1) iosStep1.innerText = l.pwaIosStep1;
+    if (iosStep2) iosStep2.innerHTML = l.pwaIosStep2;
+    if (iosStep3) iosStep3.innerHTML = l.pwaIosStep3;
+
+    const cloudDirPickerLabel = document.getElementById('cloud-dir-picker-label');
+    const icloudMacScanLabel = document.getElementById('icloud-mac-scan-label');
+    const backendBannerTitle = document.getElementById('backend-banner-title');
+    const backendBannerDesc = document.getElementById('backend-banner-desc');
+    const backendBannerBtnText = document.getElementById('backend-banner-btn-text');
+    const icloudModalTitle = document.getElementById('icloud-modal-title');
+    const icloudModalDesc = document.getElementById('icloud-modal-desc');
+
+    if (cloudDirPickerLabel) cloudDirPickerLabel.innerText = l.cloudDirPickerLabel;
+    if (icloudMacScanLabel) icloudMacScanLabel.innerText = l.icloudMacScanLabel;
+    if (backendBannerTitle) backendBannerTitle.innerText = l.backendBannerTitle;
+    if (backendBannerDesc) backendBannerDesc.innerText = l.backendBannerDesc;
+    if (backendBannerBtnText) backendBannerBtnText.innerText = l.backendBannerBtn;
+    if (icloudModalTitle) icloudModalTitle.innerText = l.icloudModalTitle;
+    if (icloudModalDesc) icloudModalDesc.innerText = l.icloudModalDesc;
+    if (typeof updateBackendUIState === 'function') updateBackendUIState();
+
     if (activeNotebookData) {
         renderResults();
     }
 }
 
 // ================================================================================
-// TABELLA DI TRADUZIONE SIMBOLI MATEMATICI UNICODE -> ASCII
+// DECODIFICA DEL CIFRARIO DI CESARE E PULIZIA TITOLI
 // ================================================================================
 
-function buildMathTranslationTable() {
-    const table = new Map();
-
-    for (let i = 0; i < 26; i++) {
-        const upper = String.fromCharCode(65 + i);
-        const lower = String.fromCharCode(97 + i);
-
-        // Math Bold Uppercase & Lowercase
-        table.set(0x1D400 + i, upper);
-        table.set(0x1D41A + i, lower);
-
-        // Math Italic Uppercase & Lowercase (con gap Planck constant 0x210E per 'h')
-        table.set(0x1D434 + i, upper);
-        if (i === 7) {
-            table.set(0x210E, 'h');
-        } else {
-            table.set(0x1D44E + i, lower);
-        }
-
-        // Math Bold Italic
-        table.set(0x1D468 + i, upper);
-        table.set(0x1D482 + i, lower);
-
-        // Math Sans-Serif Regular
-        table.set(0x1D5A0 + i, upper);
-        table.set(0x1D5BA + i, lower);
-
-        // Math Sans-Serif Bold
-        table.set(0x1D5D4 + i, upper);
-        table.set(0x1D5EE + i, lower);
-
-        // Math Sans-Serif Italic
-        table.set(0x1D608 + i, upper);
-        table.set(0x1D622 + i, lower);
-
-        // Math Sans-Serif Bold Italic
-        table.set(0x1D63C + i, upper);
-        table.set(0x1D656 + i, lower);
-
-        // Math Monospace
-        table.set(0x1D670 + i, upper);
-        table.set(0x1D68A + i, lower);
-    }
-
-    // Dotless i e dotless j
-    table.set(0x1D6A4, 'i');
-    table.set(0x1D6A5, 'j');
-
-    // Cifre matematiche Unicode (0-9)
-    for (let i = 0; i < 10; i++) {
-        const d = String(i);
-        table.set(0x1D7CE + i, d); // Bold
-        table.set(0x1D7D8 + i, d); // Double-struck
-        table.set(0x1D7E2 + i, d); // Sans-serif
-        table.set(0x1D7EC + i, d); // Sans-serif bold
-        table.set(0x1D7F6 + i, d); // Monospace
-    }
-
-    return table;
+function isLikelyItalianWord(word) {
+    const cleanW = word.toLowerCase().replace(/[^a-zàèéìòù]/g, '');
+    if (cleanW.length < 2) return false;
+    return ITALIAN_STOPWORDS.has(cleanW);
 }
 
-const MATH_TRANSLATION_TABLE = buildMathTranslationTable();
-
-function normalizeUnicode(text) {
-    if (!text) return "";
-    return text.normalize("NFC");
-}
-
-function normalizeUnicodeMath(text) {
-    if (!text) return "";
-    const norm = normalizeUnicode(text);
-    const out = [];
-    for (const char of norm) {
-        const cp = char.codePointAt(0);
-        if (MATH_TRANSLATION_TABLE.has(cp)) {
-            out.push(MATH_TRANSLATION_TABLE.get(cp));
-        } else {
-            out.push(char);
-        }
+function containsTargetKeyword(text) {
+    const words = text.toLowerCase().split(/[^a-zàèéìòù0-9]+/);
+    for (const w of words) {
+        if (CAESAR_TARGET_KEYWORDS.has(w)) return true;
     }
-    return out.join("");
-}
-
-// ================================================================================
-// DECIFRATURA CESARE SELETTIVA E PROTEZIONE ACCENTI
-// ================================================================================
-
-function decryptCaesar(text) {
-    const out = [];
-    const isAllUpper = text === text.toUpperCase() && /[A-Z]/.test(text);
-
-    for (let idx = 0; idx < text.length; idx++) {
-        const c = text[idx];
-
-        // PROTEZIONE TASSATIVA: caratteri accentati italiani e non-ASCII rimangono intatti
-        if (ITALIAN_ACCENTED_CHARS.has(c) || !(/[a-zA-Z]/.test(c))) {
-            if (/[0-9]/.test(c)) {
-                const decDig = (c.charCodeAt(0) - 48 - 6 + 20) % 10;
-                out.push(String.fromCharCode(48 + decDig));
-            } else {
-                out.push(c);
-            }
-            continue;
-        }
-
-        const isUpper = (c >= 'A' && c <= 'Z');
-        const cIdx = c.charCodeAt(0) - (isUpper ? 65 : 97);
-
-        if (isAllUpper) {
-            const pIdx = (cIdx - 4 + 26) % 26;
-            out.push(String.fromCharCode(65 + pIdx));
-        } else {
-            if (idx === 0 && isUpper) {
-                const pIdx = (cIdx - 4 + 26) % 26;
-                out.push(String.fromCharCode(65 + pIdx));
-            } else {
-                const pIdx = (cIdx + 18 + 26) % 26;
-                out.push(String.fromCharCode(97 + pIdx));
-            }
-        }
-    }
-    return out.join("");
-}
-
-function isCaesarEncrypted(text) {
-    if (!text || text.trim().length < 4) return false;
-
-    const rawClean = normalizeUnicodeMath(text).toLowerCase();
-    const words = rawClean.match(/[a-zA-Zàèéìòù]+/g) || [];
-    if (words.length === 0) return false;
-
-    // 1. Se il testo grezzo contiene già stop-word o termini italiani chiaramente leggibili, NON è cifrato!
-    const italianClearMatches = words.filter(w => ITALIAN_STOPWORDS.has(w)).length;
-    if (italianClearMatches >= 1 && words.length > 1) {
-        return false;
-    }
-
-    // 2. Se una delle parole grezze coincide esattamente con parole lunghe italiane, è in chiaro
-    if (words.some(w => CAESAR_TARGET_KEYWORDS.has(w))) {
-        return false;
-    }
-
-    // 3. Decifra il candidato e verifica se emergono parole bersaglio italiane reali
-    const dec = decryptCaesar(text).toLowerCase();
-    const decWords = new Set(dec.match(/[a-zA-Zàèéìòù]+/g) || []);
-
-    for (const target of CAESAR_TARGET_KEYWORDS) {
-        if (decWords.has(target)) return true;
-    }
-
-    // 4. Casi specifici storici di cifratura documentati
-    if (dec.includes("tumtiri") || dec.includes("tum tir") || dec.includes("ipert polm")) {
-        return true;
-    }
-
     return false;
 }
 
-// ================================================================================
-// FORMATTAZIONE CASING E COSTRUZIONE NOMI FILE
-// ================================================================================
+function countTargetKeywords(text) {
+    const words = text.toLowerCase().split(/[^a-zàèéìòù0-9]+/);
+    let count = 0;
+    for (const w of words) {
+        if (CAESAR_TARGET_KEYWORDS.has(w)) count++;
+    }
+    return count;
+}
 
-function formatTitleCasing(text) {
-    if (!text) return "";
+function isAlreadyPlainText(text) {
+    if (containsTargetKeyword(text)) return true;
+    const words = text.split(/[\s_\-–—]+/);
+    let italianHits = 0;
+    let validWords = 0;
+    for (const w of words) {
+        if (w.length >= 2) {
+            validWords++;
+            if (isLikelyItalianWord(w)) italianHits++;
+        }
+    }
+    return validWords > 0 && (italianHits / validWords) >= 0.3;
+}
 
-    const tokens = text.split(/\s+/);
-    const formatted = [];
-    const minorWords = new Set(["di", "del", "della", "delle", "dei", "degli", "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "ed", "in", "su", "per", "con", "tra", "fra", "da", "a"]);
-    const romanNumerals = new Set(["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]);
-
-    for (let idx = 0; idx < tokens.length; idx++) {
-        const rawTok = tokens[idx];
-        const match = rawTok.match(/^([^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]*)(.*?)([^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]*)$/);
-        if (!match) {
-            formatted.push(rawTok);
+function caesarShift(text, shift) {
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (ITALIAN_ACCENTED_CHARS.has(char)) {
+            result += char;
             continue;
         }
-
-        const prefix = match[1];
-        const word = match[2];
-        const suffix = match[3];
-
-        if (!word) {
-            formatted.push(rawTok);
-            continue;
-        }
-
-        const wordUp = word.toUpperCase();
-        let formattedWord = "";
-
-        // Caso 1: Acronimo medico o prefisso
-        if (WHITELIST_ACRONYMS.has(wordUp) || SUBJECT_PREFIXES.has(wordUp + suffix)) {
-            formattedWord = wordUp;
-        }
-        // Caso 2: Preposizione o congiunzione minore non all'inizio
-        else if (idx > 0 && minorWords.has(word.toLowerCase()) && !formatted[formatted.length - 1].endsWith(':')) {
-            formattedWord = word.toLowerCase();
-        }
-        // Caso 3: Numero romano legittimo (I - XII)
-        else if (romanNumerals.has(wordUp)) {
-            formattedWord = wordUp;
-        }
-        // Caso 4: Parola standard -> Capitalize (con supporto accenti)
-        else {
-            formattedWord = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-        }
-
-        formatted.push(`${prefix}${formattedWord}${suffix}`);
-    }
-
-    return formatted.join(" ");
-}
-
-function cleanTitle(title) {
-    if (!title || typeof title !== 'string') {
-        return currentLang === 'it' ? "Registrazione Senza Nome" : "Unnamed Recording";
-    }
-
-    let nameClean = normalizeUnicodeMath(title);
-
-    // Decifratura Cesare controllata
-    if (isCaesarEncrypted(nameClean)) {
-        nameClean = decryptCaesar(nameClean);
-    }
-
-    // Correzioni ortografiche note
-    const lowerName = nameClean.toLowerCase();
-    if (lowerName.includes("anuerismi")) {
-        nameClean = nameClean.replace(/anuerismi/gi, 'aneurismi');
-    }
-    if (lowerName.includes("tumtiri") || lowerName.includes("tum tir e paratir")) {
-        nameClean = "Tum tir e paratir";
-    } else if (lowerName.includes("mxmlb")) {
-        nameClean = "Ipert polm, tum card";
-    }
-
-    // Sanitizzazione caratteri vietati nei filesystem (tranne i due punti dei prefissi gestiti in export)
-    nameClean = nameClean.replace(/[\/\\\*\?"<>\|]/g, '-');
-
-    // Casing intelligente
-    nameClean = formatTitleCasing(nameClean);
-
-    // Pulizia punteggiatura orfana finale
-    nameClean = nameClean.replace(/[\s,:;\.\-_]+$/, '').trim();
-
-    return nameClean || (currentLang === 'it' ? "Registrazione Senza Nome" : "Unnamed Recording");
-}
-
-function buildExportFilename(rawTitle, datePrefix = null, ext = "m4a") {
-    const titleClean = cleanTitle(rawTitle);
-
-    // Nel filesystem i due punti ':' sono vietati su Windows e problematici su macOS
-    // Trasforma 'CV: Aneurismi' in 'CV - Aneurismi'
-    let fsTitle = titleClean.replace(/[:\/\\*\?"<>\|]/g, ' - ');
-    fsTitle = fsTitle.replace(/\s*-\s*-\s*/g, ' - ');
-    fsTitle = fsTitle.replace(/\s+/g, ' ').replace(/^[\s\-]+|[\s\-]+$/g, '');
-
-    const extClean = ext.replace(/^\.+/, '').toLowerCase();
-    if (datePrefix && datePrefix !== "00_00") {
-        return `${datePrefix} - ${fsTitle}.${extClean}`;
-    }
-    return `${fsTitle}.${extClean}`;
-}
-
-function getFilenameScore(filename) {
-    let score = 0;
-    const nameLower = filename.toLowerCase();
-    for (const kw of CAESAR_TARGET_KEYWORDS) {
-        if (nameLower.includes(kw)) score += 15;
-    }
-    for (const kw of ITALIAN_STOPWORDS) {
-        if (nameLower.includes(kw)) score += 5;
-    }
-    for (const acr of WHITELIST_ACRONYMS) {
-        if (filename.includes(acr)) score += 20;
-    }
-    for (const gibberish of ["xwtuwvq", "izbmzqbq", "kizlqwxibqm", "uitibbqm", "qvb", "xtmczi", "jkm", "jiri", "leicica"]) {
-        if (nameLower.includes(gibberish)) score -= 50;
-    }
-    return score;
-}
-
-// ================================================================================
-// PARSING MP4 ATOMO MVHD (HEAD & TAIL) E FORMATTAZIONE DURATE
-// ================================================================================
-
-function formatDurationSeconds(secondsTotal) {
-    if (secondsTotal === null || secondsTotal === undefined || secondsTotal <= 0) {
-        return "N/A";
-    }
-    const sec = Math.round(secondsTotal);
-    const hours = Math.floor(sec / 3600);
-    const minutes = Math.floor((sec % 3600) / 60);
-    const seconds = sec % 60;
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
-    }
-    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-}
-
-function formatDurationNs(nanosecs) {
-    if (typeof nanosecs !== 'number' || nanosecs <= 0) return null;
-    const totalSeconds = Math.floor(nanosecs / 1000000000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
-    }
-    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-}
-
-function parseMvhdBytes(data) {
-    const result = {
-        creationDate: null,
-        unixTimestamp: null,
-        timescale: null,
-        durationUnits: null,
-        durationSeconds: null,
-        durationFormatted: "N/A"
-    };
-
-    if (!data || data.length < 24) return result;
-
-    // Cerca 'mvhd' (0x6d, 0x76, 0x68, 0x64)
-    let idx = -1;
-    for (let i = 0; i <= data.length - 8; i++) {
-        if (data[i] === 0x6d && data[i + 1] === 0x76 && data[i + 2] === 0x68 && data[i + 3] === 0x64) {
-            idx = i;
-            break;
-        }
-    }
-
-    if (idx === -1 || idx + 8 > data.length) return result;
-
-    const version = data[idx + 4];
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-
-    let creationTimeRaw = 0;
-    let timescale = 0;
-    let duration = 0;
-
-    try {
-        if (version === 0) {
-            if (idx + 24 > data.length) return result;
-            creationTimeRaw = view.getUint32(idx + 8, false);
-            timescale = view.getUint32(idx + 16, false);
-            duration = view.getUint32(idx + 20, false);
-        } else if (version === 1) {
-            if (idx + 36 > data.length) return result;
-            const highC = view.getUint32(idx + 8, false);
-            const lowC = view.getUint32(idx + 12, false);
-            creationTimeRaw = highC * 4294967296 + lowC;
-            timescale = view.getUint32(idx + 24, false);
-            const highD = view.getUint32(idx + 28, false);
-            const lowD = view.getUint32(idx + 32, false);
-            duration = highD * 4294967296 + lowD;
+        const code = text.charCodeAt(i);
+        if (code >= 65 && code <= 90) {
+            result += String.fromCharCode(((code - 65 - shift + 26) % 26) + 65);
+        } else if (code >= 97 && code <= 122) {
+            result += String.fromCharCode(((code - 97 - shift + 26) % 26) + 97);
         } else {
-            return result;
+            result += char;
         }
-
-        if (creationTimeRaw > MAC_TO_UNIX_OFFSET) {
-            const unixTime = creationTimeRaw - MAC_TO_UNIX_OFFSET;
-            // Sanity check: compreso tra 2000 e 2040
-            if (unixTime >= 946684800 && unixTime <= 2208988800) {
-                result.unixTimestamp = unixTime;
-                result.creationDate = new Date(unixTime * 1000);
-            }
-        }
-
-        if (timescale > 0) {
-            result.timescale = timescale;
-            result.durationUnits = duration;
-            result.durationSeconds = duration / timescale;
-            result.durationFormatted = formatDurationSeconds(result.durationSeconds);
-        }
-    } catch (err) {
-        // Nessun throw su frammenti binari non standard
     }
-
     return result;
 }
 
-function parseMvhdFromBytes(dataBytes, maxHeadBytes = 262144) {
-    // 1. Prova nei primi 256 KB (head)
-    const headLen = Math.min(dataBytes.length, maxHeadBytes);
-    const headData = dataBytes.subarray(0, headLen);
-    let res = parseMvhdBytes(headData);
-    if (res.creationDate && res.durationFormatted !== "N/A") {
-        return res;
-    }
+function findBestCaesarShift(text) {
+    if (isAlreadyPlainText(text)) return 0;
+    let bestShift = 0;
+    let maxKeywordMatches = 0;
 
-    // 2. Se non trovato o mancano info, cerca negli ultimi 1.5 MB (tail)
-    const tailLen = Math.min(dataBytes.length, 1572864);
-    if (tailLen > 0 && dataBytes.length > maxHeadBytes) {
-        const tailData = dataBytes.subarray(dataBytes.length - tailLen);
-        const resTail = parseMvhdBytes(tailData);
-        if (resTail.creationDate || resTail.durationFormatted !== "N/A") {
-            if (!res.creationDate && resTail.creationDate) {
-                res.creationDate = resTail.creationDate;
-                res.unixTimestamp = resTail.unixTimestamp;
-            }
-            if (res.durationFormatted === "N/A" && resTail.durationFormatted !== "N/A") {
-                res.timescale = resTail.timescale;
-                res.durationUnits = resTail.durationUnits;
-                res.durationSeconds = resTail.durationSeconds;
-                res.durationFormatted = resTail.durationFormatted;
-            }
+    for (let shift = 1; shift < 26; shift++) {
+        const candidate = caesarShift(text, shift);
+        const matches = countTargetKeywords(candidate);
+        if (matches > maxKeywordMatches) {
+            maxKeywordMatches = matches;
+            bestShift = shift;
         }
     }
+    if (maxKeywordMatches > 0) return bestShift;
 
-    return res;
-}
-
-// ================================================================================
-// DECODIFICATORE PROTOBUF BINARIO
-// ================================================================================
-
-function readVarint(arr, offsetRef) {
-    let value = 0;
-    let multiplier = 1;
-    let shift = 0;
-    while (true) {
-        if (offsetRef.val >= arr.length) return null;
-        let byte = arr[offsetRef.val++];
-        value += (byte & 0x7f) * multiplier;
-        if (!(byte & 0x80)) break;
-        multiplier *= 128;
-        shift += 7;
-        if (shift > 64) return null; // Previene loop infiniti
+    let bestItalianScore = 0;
+    for (let shift = 1; shift < 26; shift++) {
+        const candidate = caesarShift(text, shift);
+        const words = candidate.split(/[\s_\-–—]+/);
+        let score = 0;
+        for (const w of words) {
+            if (isLikelyItalianWord(w)) score++;
+        }
+        if (score > bestItalianScore) {
+            bestItalianScore = score;
+            bestShift = shift;
+        }
     }
-    return value;
+    return bestItalianScore >= 2 ? bestShift : 0;
 }
 
-function bytesToString(bytes) {
-    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+function decodeCaesar(text) {
+    const shift = findBestCaesarShift(text);
+    return shift === 0 ? text : caesarShift(text, shift);
 }
 
-function decodeProtobufFields(bytes) {
-    const fields = {};
-    let offset = 0;
-    while (offset < bytes.length) {
-        const offsetRef = { val: offset };
-        const tag = readVarint(bytes, offsetRef);
-        if (tag === null) break;
-        offset = offsetRef.val;
-        
-        const wireType = tag % 8;
-        const fieldNumber = Math.floor(tag / 8);
-        
-        if (wireType === 0) {
-            const val = readVarint(bytes, offsetRef);
-            if (val === null) break;
-            offset = offsetRef.val;
-            fields[fieldNumber] = val;
-        } else if (wireType === 1) {
-            if (offset + 8 > bytes.length) break;
-            const valBytes = bytes.subarray(offset, offset + 8);
-            offset += 8;
-            fields[fieldNumber] = valBytes;
-        } else if (wireType === 2) {
-            const len = readVarint(bytes, offsetRef);
-            if (len === null) break;
-            offset = offsetRef.val;
-            if (offset + len > bytes.length) break;
-            const valBytes = bytes.subarray(offset, offset + len);
-            offset += len;
-            fields[fieldNumber] = valBytes;
-        } else if (wireType === 5) {
-            if (offset + 4 > bytes.length) break;
-            const valBytes = bytes.subarray(offset, offset + 4);
-            offset += 4;
-            fields[fieldNumber] = valBytes;
-        } else {
+function cleanTitle(raw) {
+    if (!raw) return TRANSLATIONS[currentLang].unnamedRecording;
+    let decoded = decodeCaesar(raw);
+    let working = decoded.replace(/\.m4a$/i, '').trim();
+
+    for (const prefix of SUBJECT_PREFIXES) {
+        if (working.toUpperCase().startsWith(prefix)) {
+            working = prefix + working.substring(prefix.length).trim();
             break;
         }
     }
-    return fields;
+
+    const segments = working.split(':');
+    let prefixPart = '';
+    let mainPart = working;
+
+    if (segments.length > 1 && SUBJECT_PREFIXES.has(segments[0].trim().toUpperCase() + ':')) {
+        prefixPart = segments[0].trim().toUpperCase() + ': ';
+        mainPart = segments.slice(1).join(':').trim();
+    }
+
+    const words = mainPart.split(/\s+/);
+    const capitalizedWords = words.map(w => {
+        const upper = w.toUpperCase();
+        if (WHITELIST_ACRONYMS.has(upper)) return upper;
+        if (w.length > 0) {
+            return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        }
+        return w;
+    });
+
+    const finalTitle = prefixPart + capitalizedWords.join(' ');
+    return finalTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
 }
 
-function parseEventsMapping(eventsPbData) {
-    const sessionToAttachment = {};
-    const sessionToTitle = {};
-    const sessionToDuration = {};
-    
-    const stream = new Uint8Array(eventsPbData);
-    let offset = 0;
-    
-    while (offset < stream.length) {
-        const offsetRef = { val: offset };
-        const length = readVarint(stream, offsetRef);
-        if (length === null) break;
-        offset = offsetRef.val;
-        
-        const msgEnd = offset + length;
-        if (msgEnd > stream.length) break;
-        
-        const msgBytes = stream.subarray(offset, msgEnd);
-        offset = msgEnd;
-        
-        try {
-            const decoded = decodeProtobufFields(msgBytes);
-            
-            // Messaggio 160: Associazione Sessione -> Attachment UUID & Durata
-            if (decoded[160]) {
-                const f160 = decodeProtobufFields(decoded[160]);
-                const s_id = f160[1] ? bytesToString(f160[1]).toUpperCase() : null;
-                const att_id = f160[2] ? bytesToString(f160[2]).toUpperCase() : null;
-                const duration_ns = f160[4] || null;
-                
-                if (s_id && att_id) {
-                    sessionToAttachment[s_id] = att_id;
-                    if (duration_ns) {
-                        const fmt = formatDurationNs(duration_ns);
-                        if (fmt) {
-                            sessionToDuration[s_id] = fmt;
-                        }
-                    }
-                }
-            }
-            
-            // Messaggio 164: Associazione Sessione -> Titolo
-            if (decoded[164]) {
-                const f164 = decodeProtobufFields(decoded[164]);
-                const s_id = f164[1] ? bytesToString(f164[1]).toUpperCase() : null;
-                const f3Bytes = f164[3];
-                
-                if (s_id && f3Bytes) {
-                    const f3 = decodeProtobufFields(f3Bytes);
-                    const title = f3[1] ? bytesToString(f3[1]) : null;
-                    if (title) {
-                        sessionToTitle[s_id] = title;
-                    }
-                }
-            }
-        } catch (e) {
-            // Salta i messaggi corrotti
-        }
+function buildExportFilename(cleanName, datePrefix, ext = 'm4a') {
+    const safeTitle = (cleanName || TRANSLATIONS[currentLang].unnamedRecording).replace(/[\\/:*?"<>|]/g, '-').trim();
+    if (datePrefix) {
+        return `${datePrefix}_${safeTitle}.${ext}`;
     }
-    
-    // Unione dei dati: NESSUNA TRACCIA SCARTATA SE MANCA LA DURATA!
-    const mappaAudio = {};
-    for (const [s_id, att_uuid] of Object.entries(sessionToAttachment)) {
-        const raw_title = sessionToTitle[s_id] || "";
-        const duration = sessionToDuration[s_id] || null;
-        
-        mappaAudio[att_uuid] = {
-            uuid: att_uuid,
-            raw_title: raw_title,
-            title: cleanTitle(raw_title),
-            duration: duration,
-            session_id: s_id
-        };
-    }
-    
-    return mappaAudio;
+    return `${safeTitle}.${ext}`;
 }
 
 // ================================================================================
-// CORE ENGINE: ESTRAZIONE E DECODIFICA DEL NOTEBOOK
+// GESTIONE DEL WEB WORKER PER ZERO-FREEZE BACKGROUND PROCESSING
+// ================================================================================
+
+let appWorker = null;
+
+function getWorker() {
+    if (!appWorker) {
+        appWorker = new Worker('worker.js');
+    }
+    return appWorker;
+}
+
+// ================================================================================
+// LIBRERIA OFFLINE PERSISTENTE (INDEXEDDB)
+// ================================================================================
+
+async function initLibrary() {
+    if (typeof GoodnotesDB === 'undefined') return;
+
+    try {
+        const notebooks = await GoodnotesDB.getAllNotebooks();
+        updateLibraryBadge(notebooks.length);
+        renderLibraryCards(notebooks);
+    } catch (err) {
+        console.warn('[Library] Impossibile caricare quaderni da IndexedDB:', err);
+    }
+}
+
+function updateLibraryBadge(count) {
+    if (libraryBadgeCount) {
+        if (count > 0) {
+            libraryBadgeCount.innerText = count;
+            libraryBadgeCount.style.display = 'inline-flex';
+        } else {
+            libraryBadgeCount.style.display = 'none';
+        }
+    }
+}
+
+function renderLibraryCards(notebooks) {
+    if (!libraryList) return;
+    const l = TRANSLATIONS[currentLang];
+
+    if (!notebooks || notebooks.length === 0) {
+        libraryList.innerHTML = `<div class="library-empty-state">${l.libraryEmpty}</div>`;
+        return;
+    }
+
+    libraryList.innerHTML = '';
+    notebooks.forEach(nb => {
+        const dateStr = nb.updatedAt ? new Date(nb.updatedAt).toLocaleDateString() : 'N/A';
+        const sizeStr = nb.fileSize ? (nb.fileSize / (1024 * 1024)).toFixed(1) + ' MB' : '';
+
+        const card = document.createElement('div');
+        card.className = 'library-card';
+        card.innerHTML = `
+            <div class="library-card-info">
+                <span class="library-card-badge">${nb.trackCount || 0} ${l.trackTag}</span>
+                <strong class="library-card-title">${nb.name || nb.id}</strong>
+                <div class="library-card-meta">
+                    <span>${l.dateTag}: ${dateStr}</span>
+                    ${sizeStr ? `<span>${l.weightTag}: ${sizeStr}</span>` : ''}
+                </div>
+            </div>
+            <div class="library-card-actions">
+                <button class="btn btn-primary" style="flex: 1; min-height: 38px; font-size: 0.85rem;" onclick="loadNotebookFromLibrary('${nb.id}')">
+                    ${l.openNotebook}
+                </button>
+                <button class="btn-icon" title="${l.deleteNotebook}" style="width: 38px; height: 38px;" onclick="handleDeleteNotebook('${nb.id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
+        libraryList.appendChild(card);
+    });
+}
+
+// Caricamento immediato di un quaderno precedentemente salvato in IndexedDB
+window.loadNotebookFromLibrary = async function(notebookId) {
+    if (typeof GoodnotesDB === 'undefined') return;
+
+    try {
+        showLoader(TRANSLATIONS[currentLang].loaderExtracting);
+        updateProgress(30);
+
+        const tracks = await GoodnotesDB.getTracksForNotebook(notebookId);
+        updateProgress(80);
+
+        activeNotebookData = {
+            name: notebookId,
+            list: tracks.map((t, idx) => ({
+                uuid: t.uuid || t.id,
+                filename: t.filename,
+                cleanTitle: t.cleanTitle || t.titleClean,
+                titleClean: t.cleanTitle || t.titleClean,
+                dateDisplay: t.dateDisplay,
+                duration: t.duration,
+                sizeMb: t.sizeMb,
+                audioBlob: t.audioBlob,
+                id: t.id
+            }))
+        };
+
+        hideLibrary();
+        renderResults();
+        updateProgress(100);
+        setTimeout(hideLoader, 250);
+
+    } catch (err) {
+        hideLoader();
+        showError('Errore caricamento quaderno da libreria: ' + err.message);
+    }
+};
+
+window.handleDeleteNotebook = async function(notebookId) {
+    if (typeof GoodnotesDB === 'undefined') return;
+    const l = TRANSLATIONS[currentLang];
+
+    if (confirm(l.confirmDeleteNotebook)) {
+        try {
+            await GoodnotesDB.deleteNotebook(notebookId);
+            const remaining = await GoodnotesDB.getAllNotebooks();
+            updateLibraryBadge(remaining.length);
+            renderLibraryCards(remaining);
+
+            // Se il quaderno attualmente aperto è stato eliminato, chiudi i risultati
+            if (activeNotebookData && activeNotebookData.name === notebookId) {
+                activeNotebookData = null;
+                resultsPanel.style.display = 'none';
+                dropZone.style.display = 'flex';
+                playerManager.closePlayer();
+            }
+        } catch (err) {
+            showError('Errore eliminazione quaderno: ' + err.message);
+        }
+    }
+};
+
+function toggleLibrary() {
+    if (librarySection.style.display === 'none' || !librarySection.style.display) {
+        librarySection.style.display = 'flex';
+        initLibrary();
+    } else {
+        librarySection.style.display = 'none';
+    }
+}
+
+function hideLibrary() {
+    if (librarySection) librarySection.style.display = 'none';
+}
+
+if (libraryToggleBtn) libraryToggleBtn.addEventListener('click', toggleLibrary);
+if (libraryCloseBtn) libraryCloseBtn.addEventListener('click', hideLibrary);
+
+// ================================================================================
+// ELABORAZIONE DEI FILE .GOODNOTES E CARTELLE
 // ================================================================================
 
 async function processGoodnotesFile(file) {
+    hideError();
     const l = TRANSLATIONS[currentLang];
+    showLoader(l.loaderExtracting);
+    updateProgress(5);
+
+    // Esegui elaborazione tramite Web Worker per non bloccare la UI
+    if (typeof Worker !== 'undefined') {
+        try {
+            const worker = getWorker();
+            const fileBuffer = await file.arrayBuffer();
+
+            const onMessagePromise = new Promise((resolve, reject) => {
+                const messageHandler = (e) => {
+                    const msg = e.data;
+                    if (!msg) return;
+
+                    if (msg.type === 'PROGRESS') {
+                        updateProgress(msg.percent || 10);
+                        if (msg.statusText) {
+                            loaderStatus.innerText = msg.statusText;
+                        }
+                    } else if (msg.type === 'SUCCESS') {
+                        worker.removeEventListener('message', messageHandler);
+                        resolve(msg.data);
+                    } else if (msg.type === 'ERROR') {
+                        worker.removeEventListener('message', messageHandler);
+                        reject(new Error(msg.error || 'Errore worker sconosciuto.'));
+                    }
+                };
+
+                const errorHandler = (err) => {
+                    worker.removeEventListener('message', messageHandler);
+                    worker.removeEventListener('error', errorHandler);
+                    reject(new Error(err.message || 'Errore di esecuzione nel Worker.'));
+                };
+
+                worker.addEventListener('message', messageHandler);
+                worker.addEventListener('error', errorHandler);
+            });
+
+            worker.postMessage(
+                {
+                    type: 'PARSE_NOTEBOOK',
+                    fileData: fileBuffer,
+                    fileName: file.name
+                },
+                [fileBuffer]
+            );
+
+            const result = await onMessagePromise;
+
+            activeNotebookData = {
+                name: result.notebookName,
+                list: result.tracks
+            };
+
+            // Salvataggio atomico persistente in IndexedDB
+            if (typeof GoodnotesDB !== 'undefined') {
+                try {
+                    await GoodnotesDB.saveNotebookWithTracks(
+                        {
+                            id: result.notebookName,
+                            name: result.notebookName,
+                            fileSize: file.size,
+                            trackCount: result.totalTracks,
+                            ghostTracksCount: result.ghostTracksCount || 0
+                        },
+                        result.tracks
+                    );
+                    initLibrary();
+                } catch (dbErr) {
+                    console.warn('[IndexedDB] Errore salvataggio:', dbErr);
+                }
+            }
+
+            renderResults();
+            updateProgress(100);
+            setTimeout(hideLoader, 250);
+            return;
+
+        } catch (workerErr) {
+            console.warn('[Worker] Errore elaborazione worker, avvio fallback:', workerErr);
+        }
+    }
+
+    // Fallback su Main Thread con JSZip
     try {
-        hideError();
-        showLoader(l.loaderExtracting);
-        updateProgress(10);
+        const zip = new JSZip();
+        const zipContent = await zip.loadAsync(file);
         
-        // Estrazione del file ZIP
-        const zip = await JSZip.loadAsync(file);
-        
-        updateProgress(30);
-        loaderStatus.innerText = l.loaderParsing;
-        
-        const eventsPb = zip.file("index.events.pb");
-        if (!eventsPb) {
-            throw new Error(l.errorNoEvents);
+        let eventsFile = zipContent.file("index.events.pb") || zipContent.file("events.pb");
+        if (!eventsFile) {
+            const matches = zipContent.file(/index\.events\.pb$/i);
+            if (matches.length > 0) eventsFile = matches[0];
         }
-        
-        const eventsData = await eventsPb.async("uint8array");
-        const mappaAudio = parseEventsMapping(eventsData);
-        
-        updateProgress(50);
+
+        const eventsData = eventsFile ? await eventsFile.async("uint8array") : null;
+        updateProgress(35);
         loaderStatus.innerText = l.loaderScanning;
-        
-        const candidates = [];
-        const attachmentsFolder = zip.folder("attachments");
-        
-        if (!attachmentsFolder) {
-            throw new Error(l.errorNoFolder);
-        }
-        
-        const fileKeys = Object.keys(mappaAudio);
-        let completedFiles = 0;
-        
-        for (const attUuid of fileKeys) {
-            const info = mappaAudio[attUuid];
-            const attFile = zip.file(`attachments/${attUuid}`);
-            if (attFile) {
-                const attData = await attFile.async("uint8array");
-                const mvhdInfo = parseMvhdFromBytes(attData);
-                
-                let creationDate = mvhdInfo.creationDate;
-                if (!creationDate) {
-                    creationDate = attFile.date || new Date();
-                }
-                
-                // Durata: priorità a Protobuf, fallback automatico su atomo mvhd
-                let finalDuration = info.duration;
-                if (!finalDuration || finalDuration === "N/A") {
-                    finalDuration = mvhdInfo.durationFormatted || "N/A";
-                }
-                
-                candidates.push({
-                    uuid: attUuid,
-                    fileData: attData,
-                    rawTitle: info.raw_title,
-                    titleOriginal: info.title,
-                    dateObj: creationDate,
-                    unixTimestamp: mvhdInfo.unixTimestamp || (creationDate ? Math.floor(creationDate.getTime() / 1000) : 0),
-                    duration: finalDuration,
-                    size: attData.length
+
+        const audioAttachments = [];
+        zipContent.forEach((relativePath, zipEntry) => {
+            if (!zipEntry.dir && relativePath.toLowerCase().endsWith('.m4a')) {
+                const parts = relativePath.split('/');
+                const filename = parts[parts.length - 1];
+                const uuid = filename.replace(/\.m4a$/i, '');
+                audioAttachments.push({
+                    relativePath: relativePath,
+                    filename: filename,
+                    uuid: uuid,
+                    zipEntry: zipEntry
                 });
             }
-            completedFiles++;
-            updateProgress(50 + Math.floor((completedFiles / fileKeys.length) * 20));
-        }
-        
-        if (candidates.length === 0) {
+        });
+
+        if (audioAttachments.length === 0) {
             throw new Error(l.errorNoAudio);
         }
-        
-        // Deduplicazione fisica in base alla dimensione esatta del file
-        const sizeMap = {};
-        for (const cand of candidates) {
-            if (!sizeMap[cand.size]) sizeMap[cand.size] = [];
-            sizeMap[cand.size].push(cand);
-        }
-        
-        const deduplicatedCandidates = [];
-        for (const size of Object.keys(sizeMap)) {
-            const list = sizeMap[size];
-            if (list.length > 1) {
-                list.sort((a, b) => {
-                    const scoreA = (!a.rawTitle || a.rawTitle.trim() === "") ? -100 : getFilenameScore(a.titleOriginal);
-                    const scoreB = (!b.rawTitle || b.rawTitle.trim() === "") ? -100 : getFilenameScore(b.titleOriginal);
-                    return scoreB - scoreA;
-                });
-                deduplicatedCandidates.push(list[0]);
-            } else {
-                deduplicatedCandidates.push(list[0]);
-            }
-        }
-        
-        // Ordinamento cronologico
-        deduplicatedCandidates.sort((a, b) => (a.unixTimestamp || 0) - (b.unixTimestamp || 0));
-        
-        // Assegnazione dei nomi finali coerenti con sanitizzazione filesystem
-        let clipCounter = 1;
+
         const finalExportList = [];
-        
-        for (const cand of deduplicatedCandidates) {
-            let rawTitle = cand.rawTitle;
-            if (!rawTitle || rawTitle.trim() === "") {
-                rawTitle = `${l.clipAudio} ${clipCounter}`;
-                clipCounter++;
-            }
-            
-            // Prefisso Data: GG_MM
-            let datePrefix = "00_00";
-            let dateDisplay = "N/A";
-            if (cand.dateObj && !isNaN(cand.dateObj.getTime())) {
-                const day = cand.dateObj.getDate().toString().padStart(2, '0');
-                const month = (cand.dateObj.getMonth() + 1).toString().padStart(2, '0');
-                const year = cand.dateObj.getFullYear();
-                const hours = cand.dateObj.getHours().toString().padStart(2, '0');
-                const minutes = cand.dateObj.getMinutes().toString().padStart(2, '0');
-                datePrefix = `${day}_${month}`;
-                dateDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
-            }
-            
-            const destFilename = buildExportFilename(rawTitle, datePrefix, "m4a");
-            const cleanT = cleanTitle(rawTitle);
-            
+        for (let i = 0; i < audioAttachments.length; i++) {
+            const cand = audioAttachments[i];
+            const fileData = await cand.zipEntry.async("uint8array");
+            const cleanT = cand.uuid;
+            const destFilename = `${i + 1}_${cand.filename}`;
+
             finalExportList.push({
                 uuid: cand.uuid,
                 filename: destFilename,
                 titleClean: cleanT,
-                dateDisplay: dateDisplay,
-                duration: cand.duration,
-                sizeMb: (cand.size / (1024 * 1024)).toFixed(2),
-                fileData: cand.fileData
+                cleanTitle: cleanT,
+                dateDisplay: new Date().toLocaleDateString(),
+                duration: 'N/A',
+                sizeMb: (fileData.byteLength / (1024 * 1024)).toFixed(2),
+                fileData: fileData
             });
+            updateProgress(40 + Math.floor((i / audioAttachments.length) * 45));
         }
-        
-        updateProgress(90);
-        loaderStatus.innerText = l.loaderFinalizing;
-        
-        // Memorizza i dati per il download
+
         activeNotebookData = {
             name: file.name.replace(/\.goodnotes$/, '').replace(/\.zip$/, ''),
             list: finalExportList
         };
-        
+
+        if (typeof GoodnotesDB !== 'undefined') {
+            try {
+                await GoodnotesDB.saveNotebookWithTracks(
+                    {
+                        id: activeNotebookData.name,
+                        name: activeNotebookData.name,
+                        fileSize: file.size,
+                        trackCount: finalExportList.length
+                    },
+                    finalExportList
+                );
+                initLibrary();
+            } catch (dbErr) {}
+        }
+
         renderResults();
-        
         updateProgress(100);
         setTimeout(hideLoader, 250);
-        
+
     } catch (e) {
         hideLoader();
         showError(e.message);
     }
 }
 
-// ================================================================================
-// RENDERING GRAFICO E RIPRODUZIONE AUDIO ANTEPRIMA
-// ================================================================================
+// Gestione selezione intera cartella webkitdirectory
+function handleFolderSelection(files) {
+    if (!files || files.length === 0) return;
+    const l = TRANSLATIONS[currentLang];
 
-function togglePlayAudio(index) {
-    if (!activeNotebookData || !activeNotebookData.list[index]) return;
-    const track = activeNotebookData.list[index];
-    const btn = document.getElementById(`play-btn-${index}`);
+    const validFiles = Array.from(files).filter(f => 
+        f.name.endsWith('.goodnotes') || f.name.endsWith('.zip')
+    );
 
-    if (currentAudio && currentPlayingIndex === index) {
-        currentAudio.pause();
-        currentAudio = null;
-        currentPlayingIndex = null;
-        if (btn) btn.innerHTML = getPlayIconSvg();
+    if (validFiles.length === 0) {
+        showError(l.errorNoFolderFiles);
         return;
     }
 
-    if (currentAudio) {
-        currentAudio.pause();
-        if (currentPlayingIndex !== null) {
-            const oldBtn = document.getElementById(`play-btn-${currentPlayingIndex}`);
-            if (oldBtn) oldBtn.innerHTML = getPlayIconSvg();
-        }
-        currentAudio = null;
-        currentPlayingIndex = null;
+    // Se c'è un solo quaderno, processalo immediatamente
+    if (validFiles.length === 1) {
+        processGoodnotesFile(validFiles[0]);
+    } else {
+        // Se ce ne sono molteplici, avvia il primo e notifica l'utente
+        console.log(`[Folder] Rilevati ${validFiles.length} quaderni. Apertura di ${validFiles[0].name}`);
+        processGoodnotesFile(validFiles[0]);
     }
-
-    const blob = new Blob([track.fileData], { type: 'audio/mp4' });
-    const url = URL.createObjectURL(blob);
-    currentAudio = new Audio(url);
-    currentPlayingIndex = index;
-
-    if (btn) btn.innerHTML = getPauseIconSvg();
-
-    currentAudio.play().catch(e => {
-        console.error("Playback error:", e);
-        if (btn) btn.innerHTML = getPlayIconSvg();
-        currentAudio = null;
-        currentPlayingIndex = null;
-    });
-
-    currentAudio.onended = () => {
-        if (btn) btn.innerHTML = getPlayIconSvg();
-        currentAudio = null;
-        currentPlayingIndex = null;
-        URL.revokeObjectURL(url);
-    };
 }
+
+// ================================================================================
+// RENDERING GRAFICO E DOWNLOAD
+// ================================================================================
 
 function getPlayIconSvg() {
     return `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -961,8 +1231,10 @@ function renderResults() {
     recordingsContainer.innerHTML = '';
     
     activeNotebookData.list.forEach((item, index) => {
+        const isCurrentlyPlaying = playerManager.currentTrackIndex === index && !playerManager.audio.paused;
+
         const itemHtml = `
-            <div class="recording-item">
+            <div class="recording-item ${isCurrentlyPlaying ? 'is-playing' : ''}">
                 <div class="recording-details">
                     <div class="recording-name-clean">${item.filename}</div>
                     <div class="recording-meta">
@@ -973,8 +1245,8 @@ function renderResults() {
                     </div>
                 </div>
                 <div class="recording-actions">
-                    <button id="play-btn-${index}" class="btn-icon" title="${l.playAudio}" onclick="togglePlayAudio(${index})">
-                        ${getPlayIconSvg()}
+                    <button id="play-btn-${index}" class="btn-icon" title="${l.playAudio}" onclick="playerManager.playTrackAtIndex(${index}, activeNotebookData.list, activeNotebookData.name)">
+                        ${isCurrentlyPlaying ? getPauseIconSvg() : getPlayIconSvg()}
                     </button>
                     <button class="btn-icon" title="${l.downloadSingle}" onclick="downloadSingleTrack(${index})">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -996,32 +1268,104 @@ function downloadSingleTrack(index) {
     if (!activeNotebookData || !activeNotebookData.list[index]) return;
     const track = activeNotebookData.list[index];
     
-    const blob = new Blob([track.fileData], { type: 'audio/mp4' });
-    const url = URL.createObjectURL(blob);
+    let blob = track.audioBlob;
+    if (!blob && track.fileData) {
+        blob = new Blob([track.fileData], { type: 'audio/mp4' });
+    }
     
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = track.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = track.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } else if (track.audioUrl) {
+        const a = document.createElement('a');
+        a.href = track.audioUrl;
+        a.download = track.filename;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
 }
 
-// Download di tutte le tracce aggregate in un unico archivio ZIP
+// Download aggregato ZIP in background worker
 async function downloadAllAsZip() {
-    if (!activeNotebookData) return;
+    if (!activeNotebookData || !activeNotebookData.list.length) return;
     
     const l = TRANSLATIONS[currentLang];
+    showLoader(l.loaderZipProgress);
+    updateProgress(5);
+
+    if (typeof Worker !== 'undefined') {
+        try {
+            const worker = getWorker();
+            const zipName = `${activeNotebookData.name}_Audio.zip`;
+
+            const zipPromise = new Promise((resolve, reject) => {
+                const messageHandler = (e) => {
+                    const msg = e.data;
+                    if (!msg) return;
+
+                    if (msg.type === 'PROGRESS') {
+                        updateProgress(msg.percent || 10);
+                        if (msg.statusText) loaderStatus.innerText = msg.statusText;
+                    } else if (msg.type === 'ZIP_SUCCESS') {
+                        worker.removeEventListener('message', messageHandler);
+                        resolve(msg.data);
+                    } else if (msg.type === 'ERROR') {
+                        worker.removeEventListener('message', messageHandler);
+                        reject(new Error(msg.error || 'Errore generazione ZIP.'));
+                    }
+                };
+
+                const errorHandler = (err) => {
+                    worker.removeEventListener('message', messageHandler);
+                    worker.removeEventListener('error', errorHandler);
+                    reject(new Error(err.message || 'Errore worker durante lo ZIP.'));
+                };
+
+                worker.addEventListener('message', messageHandler);
+                worker.addEventListener('error', errorHandler);
+            });
+
+            worker.postMessage({
+                type: 'GENERATE_ZIP',
+                tracks: activeNotebookData.list,
+                zipName: zipName
+            });
+
+            const zipResult = await zipPromise;
+
+            const url = URL.createObjectURL(zipResult.blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = zipResult.fileName || zipName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            hideLoader();
+            return;
+
+        } catch (workerZipErr) {
+            console.warn('[Worker] Errore ZIP in worker, fallback:', workerZipErr);
+        }
+    }
+
+    // Fallback ZIP su main thread
     try {
-        showLoader(l.loaderZipProgress);
-        updateProgress(10);
-        
         const zip = new JSZip();
         let added = 0;
         
         for (const track of activeNotebookData.list) {
-            zip.file(track.filename, track.fileData);
+            const content = track.audioBlob || track.fileData;
+            zip.file(track.filename, content);
             added++;
             updateProgress(10 + Math.floor((added / activeNotebookData.list.length) * 80));
         }
@@ -1047,7 +1391,7 @@ async function downloadAllAsZip() {
     }
 }
 
-// Download di tutte le tracce singolarmente in sequenza
+// Download sequenziale di tutti i singoli m4a
 async function downloadAllAsFiles() {
     if (!activeNotebookData) return;
     
@@ -1059,9 +1403,7 @@ async function downloadAllAsFiles() {
         for (let i = 0; i < activeNotebookData.list.length; i++) {
             const track = activeNotebookData.list[i];
             loaderStatus.innerText = `${l.downloadingSingle}${track.filename} (${i + 1}/${activeNotebookData.list.length})`;
-            
             downloadSingleTrack(i);
-            
             updateProgress(10 + Math.floor(((i + 1) / activeNotebookData.list.length) * 90));
             await new Promise(resolve => setTimeout(resolve, 300));
         }
@@ -1104,7 +1446,7 @@ function hideError() {
     errorAlert.style.display = 'none';
 }
 
-// Eventi di Drag and Drop
+// Drag & Drop
 dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropZone.classList.add('drag-over');
@@ -1128,8 +1470,9 @@ dropZone.addEventListener('drop', (e) => {
     }
 });
 
-// Evento di Click sulla DropZone per aprire il selettore file nativo
-dropZone.addEventListener('click', () => {
+dropZone.addEventListener('click', (e) => {
+    // Non propagare se si è cliccato sul bottone cartella
+    if (e.target.closest('#browse-folder-btn')) return;
     fileInput.click();
 });
 
@@ -1139,6 +1482,17 @@ fileInput.addEventListener('change', () => {
     }
 });
 
+if (browseFolderBtn && folderInput) {
+    browseFolderBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        folderInput.click();
+    });
+
+    folderInput.addEventListener('change', () => {
+        handleFolderSelection(folderInput.files);
+    });
+}
+
 downloadAllBtn.addEventListener('click', downloadAllAsZip);
 downloadFilesBtn.addEventListener('click', downloadAllAsFiles);
 
@@ -1146,9 +1500,371 @@ downloadFilesBtn.addEventListener('click', downloadAllAsFiles);
 document.getElementById('lang-btn-it').addEventListener('click', () => applyLanguage('it'));
 document.getElementById('lang-btn-en').addEventListener('click', () => applyLanguage('en'));
 
-// Rilevamento automatico lingua utente (default italiano)
+// Rilevamento automatico lingua (default italiano)
 let defaultLang = 'it';
 if (navigator.language && !navigator.language.startsWith('it')) {
     defaultLang = 'en';
 }
 applyLanguage(defaultLang);
+
+// Inizializza la libreria offline e la sincronizzazione al caricamento del DOM
+document.addEventListener('DOMContentLoaded', () => {
+    initLibrary();
+    initPwaInstallUI();
+    initBackendConnection();
+});
+
+// ================================================================================
+// PWA STANDALONE DETECTION & ADD TO HOME SCREEN / DESKTOP GUIDE
+// ================================================================================
+
+const PWA_DISMISSED_KEY = 'gn_pwa_install_dismissed';
+let deferredInstallPrompt = null;
+
+function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true ||
+           document.referrer.includes('android-app://');
+}
+
+function isIosOrIpadSafari() {
+    const ua = window.navigator.userAgent;
+    const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isWebkit = /WebKit/.test(ua);
+    const isChrome = /CriOS/.test(ua);
+    const isFirefox = /FxiOS/.test(ua);
+    return isIos && isWebkit && !isChrome && !isFirefox;
+}
+
+function initPwaInstallUI() {
+    const banner = document.getElementById('pwa-install-banner');
+    const headerBtn = document.getElementById('pwa-header-install-btn');
+    const actionBtn = document.getElementById('pwa-install-banner-btn');
+    const dismissBtn = document.getElementById('pwa-install-dismiss-btn');
+    const iosModal = document.getElementById('pwa-ios-modal');
+    const iosCloseBtn = document.getElementById('pwa-ios-modal-close');
+    const iosDismissBtn = document.getElementById('pwa-ios-modal-dismiss');
+
+    if (!banner) return;
+
+    if (isRunningStandalone()) {
+        banner.style.display = 'none';
+        if (headerBtn) headerBtn.style.display = 'none';
+        return;
+    }
+
+    const isDismissed = localStorage.getItem(PWA_DISMISSED_KEY) === 'true';
+
+    if (headerBtn) {
+        headerBtn.style.display = 'inline-flex';
+    }
+
+    if (!isDismissed) {
+        banner.style.display = 'flex';
+    }
+
+    const handleInstallTrigger = async () => {
+        if (deferredInstallPrompt) {
+            deferredInstallPrompt.prompt();
+            const choice = await deferredInstallPrompt.userChoice;
+            if (choice.outcome === 'accepted') {
+                banner.style.display = 'none';
+                if (headerBtn) headerBtn.style.display = 'none';
+            }
+            deferredInstallPrompt = null;
+        } else if (isIosOrIpadSafari()) {
+            if (iosModal) iosModal.style.display = 'flex';
+        } else {
+            if (iosModal) iosModal.style.display = 'flex';
+        }
+    };
+
+    if (actionBtn) actionBtn.onclick = handleInstallTrigger;
+    if (headerBtn) headerBtn.onclick = handleInstallTrigger;
+
+    if (dismissBtn) {
+        dismissBtn.onclick = () => {
+            banner.style.display = 'none';
+            localStorage.setItem(PWA_DISMISSED_KEY, 'true');
+        };
+    }
+
+    if (iosCloseBtn) {
+        iosCloseBtn.onclick = () => {
+            if (iosModal) iosModal.style.display = 'none';
+        };
+    }
+    if (iosDismissBtn) {
+        iosDismissBtn.onclick = () => {
+            if (iosModal) iosModal.style.display = 'none';
+        };
+    }
+
+    if (iosModal) {
+        iosModal.onclick = (e) => {
+            if (e.target === iosModal) {
+                iosModal.style.display = 'none';
+            }
+        };
+    }
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    initPwaInstallUI();
+});
+
+window.addEventListener('appinstalled', () => {
+    const banner = document.getElementById('pwa-install-banner');
+    const headerBtn = document.getElementById('pwa-header-install-btn');
+    if (banner) banner.style.display = 'none';
+    if (headerBtn) headerBtn.style.display = 'none';
+    deferredInstallPrompt = null;
+});
+
+// ================================================================================
+// GESTIONE BACKEND BRIDGE & ICLOUD MODAL (MILESTONE 4)
+// ================================================================================
+
+async function initBackendConnection() {
+    if (typeof CloudSync === 'undefined') return;
+
+    try {
+        const result = await CloudSync.detectBackendConnection();
+        backendConnectionState = result;
+        updateBackendUIState();
+    } catch (err) {
+        console.warn('[BackendBridge] Errore rilevamento:', err);
+        backendConnectionState = { connected: false, origin: null };
+        updateBackendUIState();
+    }
+}
+
+function updateBackendUIState() {
+    const l = TRANSLATIONS[currentLang];
+    if (!connectionStatusPill) return;
+
+    if (backendConnectionState.connected) {
+        connectionStatusPill.className = 'status-pill status-connected';
+        if (connectionStatusText) connectionStatusText.innerText = l.statusConnected || 'Mac Backend Attivo';
+        connectionStatusPill.title = l.statusPillTitleConnected || 'Connesso al backend Mac (Zero-Space iCloud attivo)';
+        
+        if (backendQuickBanner) backendQuickBanner.style.display = 'flex';
+        if (icloudMacScanBtn) icloudMacScanBtn.style.display = 'inline-flex';
+    } else {
+        connectionStatusPill.className = 'status-pill status-standalone';
+        if (connectionStatusText) connectionStatusText.innerText = l.statusStandalone || 'Standalone Offline';
+        connectionStatusPill.title = l.statusPillTitleStandalone || 'Modalità di elaborazione attiva in locale nel browser (100% Offline)';
+        
+        if (backendQuickBanner) backendQuickBanner.style.display = 'none';
+        if (icloudMacScanBtn) icloudMacScanBtn.style.display = 'none';
+    }
+}
+
+async function openICloudNotebooksModal() {
+    if (!backendConnectionState.connected) return;
+    if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'flex';
+    if (icloudNotebooksList) {
+        icloudNotebooksList.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: var(--text-secondary);"><div class="spinner" style="margin: 0 auto 0.75rem auto;"></div>Caricamento quaderni da iCloud Drive...</div>';
+    }
+
+    try {
+        const notebooks = await CloudSync.fetchBackendNotebooks(backendConnectionState.origin);
+        icloudCachedNotebooks = notebooks || [];
+        renderICloudNotebooks(icloudCachedNotebooks);
+    } catch (err) {
+        if (icloudNotebooksList) {
+            icloudNotebooksList.innerHTML = `<div style="padding: 1rem; color: var(--danger); text-align: center;">Errore durante la scansione: ${err.message}</div>`;
+        }
+    }
+}
+
+function renderICloudNotebooks(notebooks) {
+    if (!icloudNotebooksList) return;
+    const l = TRANSLATIONS[currentLang];
+
+    if (!notebooks || notebooks.length === 0) {
+        icloudNotebooksList.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-secondary);">${l.noICloudNotebooksFound || 'Nessun quaderno .goodnotes trovato.'}</div>`;
+        return;
+    }
+
+    icloudNotebooksList.innerHTML = '';
+    notebooks.forEach((nb) => {
+        const card = document.createElement('div');
+        card.className = 'icloud-notebook-card';
+        card.innerHTML = `
+            <div class="icloud-notebook-details">
+                <div class="icloud-notebook-name" title="${nb.name}">${nb.name}</div>
+                <div class="icloud-notebook-meta">
+                    <span>${nb.folder || 'iCloud'}</span>
+                    <span>•</span>
+                    <span>${nb.size_mb} MB</span>
+                </div>
+            </div>
+            <button class="apple-btn-open-notebook" data-path="${nb.relative_path || nb.name}">
+                ${l.loadAndExtractBtn || 'Carica ed Estrai'}
+            </button>
+        `;
+
+        card.querySelector('.apple-btn-open-notebook').addEventListener('click', () => {
+            loadBackendNotebook(nb);
+        });
+
+        icloudNotebooksList.appendChild(card);
+    });
+}
+
+async function loadBackendNotebook(notebook) {
+    if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'none';
+    hideError();
+    const l = TRANSLATIONS[currentLang];
+    showLoader(`Analisi Zero-Space in corso: ${notebook.name}...`);
+    updateProgress(35);
+
+    try {
+        const result = await CloudSync.analyzeBackendNotebook(backendConnectionState.origin, notebook.relative_path || notebook.name);
+        updateProgress(80);
+
+        if (result.error) {
+            throw new Error(result.error);
+        }
+
+        const recordings = (result.recordings || []).map((rec, idx) => ({
+            id: `${result.notebook}_${rec.uuid}`,
+            uuid: rec.uuid,
+            filename: rec.export_filename,
+            cleanTitle: rec.clean_title,
+            rawTitle: rec.raw_title,
+            duration: rec.duration,
+            dateDisplay: rec.date || rec.creation_time || 'N/A',
+            unixTimestamp: rec.unix_timestamp,
+            size: rec.size_bytes,
+            sizeMb: rec.size_mb,
+            audioUrl: `${backendConnectionState.origin}/api/audio/play?notebook=${encodeURIComponent(result.notebook)}&uuid=${encodeURIComponent(rec.uuid)}`
+        }));
+
+        activeNotebookData = {
+            name: result.notebook,
+            list: recordings,
+            isBackend: true,
+            notebookPath: result.notebook_path
+        };
+
+        if (typeof GoodnotesDB !== 'undefined') {
+            try {
+                await GoodnotesDB.saveNotebookWithTracks(
+                    {
+                        id: result.notebook,
+                        name: result.notebook,
+                        fileSize: notebook.size_mb ? Math.round(notebook.size_mb * 1024 * 1024) : 0,
+                        trackCount: recordings.length,
+                        ghostTracksCount: result.ghost_tracks_count || 0
+                    },
+                    recordings
+                );
+                initLibrary();
+            } catch (dbErr) {
+                console.warn('[IndexedDB] Errore salvataggio:', dbErr);
+            }
+        }
+
+        renderResults();
+        updateProgress(100);
+        setTimeout(hideLoader, 250);
+    } catch (err) {
+        hideLoader();
+        showError(`Errore caricamento quaderno da backend: ${err.message}`);
+    }
+}
+
+async function handleCloudDirectoryPicker() {
+    try {
+        const handle = await CloudSync.selectCloudDirectory();
+        showLoader('Scansione cartella Cloud in corso...');
+        updateProgress(30);
+
+        const files = await CloudSync.scanDirectoryHandle(handle);
+        hideLoader();
+
+        if (files.length === 0) {
+            showError('Nessun quaderno .goodnotes trovato nella cartella selezionata.');
+            return;
+        }
+
+        if (files.length === 1) {
+            processGoodnotesFile(files[0].file);
+        } else {
+            // Se molteplici, mostra la lista per la selezione
+            if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'flex';
+            const converted = files.map(f => ({
+                name: f.name.replace(/\.goodnotes$/i, ''),
+                folder: f.relativePath,
+                size_mb: f.sizeMb,
+                fileObj: f.file
+            }));
+
+            if (icloudNotebooksList) {
+                icloudNotebooksList.innerHTML = '';
+                converted.forEach(nb => {
+                    const card = document.createElement('div');
+                    card.className = 'icloud-notebook-card';
+                    card.innerHTML = `
+                        <div class="icloud-notebook-details">
+                            <div class="icloud-notebook-name">${nb.name}</div>
+                            <div class="icloud-notebook-meta">
+                                <span>${nb.folder}</span>
+                                <span>•</span>
+                                <span>${nb.size_mb} MB</span>
+                            </div>
+                        </div>
+                        <button class="apple-btn-open-notebook">Apri</button>
+                    `;
+                    card.querySelector('.apple-btn-open-notebook').addEventListener('click', () => {
+                        if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'none';
+                        processGoodnotesFile(nb.fileObj);
+                    });
+                    icloudNotebooksList.appendChild(card);
+                });
+            }
+        }
+    } catch (err) {
+        hideLoader();
+        if (err.name !== 'AbortError') {
+            showError(`Errore selezione cartella Cloud: ${err.message}`);
+        }
+    }
+}
+
+// Event Listeners Milestone 4
+if (icloudMacScanBtn) {
+    icloudMacScanBtn.addEventListener('click', openICloudNotebooksModal);
+}
+if (backendQuickScanActionBtn) {
+    backendQuickScanActionBtn.addEventListener('click', openICloudNotebooksModal);
+}
+if (icloudModalCloseBtn) {
+    icloudModalCloseBtn.addEventListener('click', () => {
+        if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'none';
+    });
+}
+if (icloudNotebooksModal) {
+    icloudNotebooksModal.addEventListener('click', (e) => {
+        if (e.target === icloudNotebooksModal) {
+            icloudNotebooksModal.style.display = 'none';
+        }
+    });
+}
+if (icloudSearchInput) {
+    icloudSearchInput.addEventListener('input', () => {
+        const query = icloudSearchInput.value.toLowerCase().trim();
+        const filtered = icloudCachedNotebooks.filter(nb => 
+            nb.name.toLowerCase().includes(query) || (nb.folder && nb.folder.toLowerCase().includes(query))
+        );
+        renderICloudNotebooks(filtered);
+    });
+}
+if (cloudDirPickerBtn) {
+    cloudDirPickerBtn.addEventListener('click', handleCloudDirectoryPicker);
+}
+

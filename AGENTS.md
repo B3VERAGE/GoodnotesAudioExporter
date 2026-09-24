@@ -78,4 +78,26 @@ The following skills are active and recommended for this project:
 - [Backend Patterns & Concurrency](.agents/rules/backend-patterns.md)
 - [Decoding Standards & Quality Gate](.agents/rules/decoding-testing.md)
 
+<!-- BEGIN FRONTEND_STACK -->
+## Frontend Stack & Anti-Slop Guidelines
+- **Architecture**: Vanilla ES Modules + Modern Semantic CSS + Dedicated Web Worker (`worker.js`)
+- **Design System & Strategy**:
+  - `taste-skill`: Pre-flight anti-slop calibration (Apple HIG aesthetic, no generic AI tropes).
+  - `ui-ux-pro-max`: Apple HIG tokens, light/dark mode, typography and spacing scale.
+  - `impeccable`: Design critique, tactile micro-copy, balanced padding and hierarchy.
+- **Component & Storage Stack**:
+  - `IndexedDB` (`GN_DB`): Persistent local library of notebooks and track blobs.
+  - `Web Worker`: Dedicated thread for non-blocking ZIP unpacking, Protobuf parsing, and MP4 parsing.
+  - `MediaSession API`: Native lockscreen audio controls and hardware keys integration.
+  - `Service Worker`: Stale-While-Revalidate app shell and offline cache.
+- **Verification & Audit Gates**:
+  - `the-judge`: Evidence-first review.
+  - `mock-hunter`: Zero unverified fake data.
+  - `a11y-debugging`: WCAG AA compliance (4.5:1 contrast, keyboard navigation, aria-live).
+- **Design Dials Snapshot**:
+  - `DESIGN_VARIANCE`: 8/10
+  - `MOTION_INTENSITY`: 6/10
+  - `VISUAL_DENSITY`: 5/10
+<!-- END FRONTEND_STACK -->
+
 <!-- AGENTS-GENERATED-END -->
