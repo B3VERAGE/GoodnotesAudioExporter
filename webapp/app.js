@@ -73,13 +73,7 @@ const supportsDirectoryPicker = typeof window.showDirectoryPicker === 'function'
 
 function updateCloudButtonVisibility() {
     if (!unifiedCloudBtn) return;
-    if (backendConnectionState && backendConnectionState.connected) {
-        unifiedCloudBtn.style.display = 'inline-flex';
-    } else if (supportsDirectoryPicker) {
-        unifiedCloudBtn.style.display = 'inline-flex';
-    } else {
-        unifiedCloudBtn.style.display = 'none';
-    }
+    unifiedCloudBtn.style.display = 'inline-flex';
 }
 updateCloudButtonVisibility();
 
@@ -1907,7 +1901,7 @@ async function loadBackendNotebook(notebook) {
 
 async function handleCloudDirectoryPicker() {
     if (!supportsDirectoryPicker) {
-        showError("La selezione diretta di cartelle non è supportata su questo browser. Usa 'Sfoglia Notebook...' per selezionare il tuo file .goodnotes.");
+        showError("La selezione diretta di cartelle non è supportata su questo browser. Usa 'Sfoglia cartella' per selezionare il tuo file .goodnotes.");
         return;
     }
     try {
@@ -2013,26 +2007,47 @@ function isIosOrIpad() {
 if (unifiedBrowseBtn) {
     unifiedBrowseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
-        if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
-            if (iosGuideDismissCheckbox) {
-                iosGuideDismissCheckbox.checked = false;
+        if (isIosOrIpad()) {
+            const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
+            if (iosFilesGuideModal && !guideDismissed) {
+                if (iosGuideDismissCheckbox) {
+                    iosGuideDismissCheckbox.checked = false;
+                }
+                iosFilesGuideModal.style.display = 'flex';
+                return;
             }
-            iosFilesGuideModal.style.display = 'flex';
-            return;
+            fileInput.click();
+        } else {
+            // Su desktop apri il selettore cartella (o file come fallback)
+            if (folderInput) {
+                folderInput.click();
+            } else {
+                fileInput.click();
+            }
         }
-        fileInput.click();
     });
 }
 
 if (unifiedCloudBtn) {
-    unifiedCloudBtn.addEventListener('click', () => {
-        if (backendConnectionState.connected) {
+    unifiedCloudBtn.addEventListener('click', (e) => {
+        if (e) e.stopPropagation();
+        if (backendConnectionState && backendConnectionState.connected) {
             openICloudNotebooksModal();
         } else if (supportsDirectoryPicker) {
             handleCloudDirectoryPicker();
         } else {
-            showError("La selezione diretta di cartelle non è supportata su questo browser. Usa 'Sfoglia Notebook...' per selezionare il tuo file .goodnotes.");
+            // Su iOS / Safari mobile / browser senza File System Access API:
+            // L'app File di iOS gestisce direttamente iCloud Drive, Google Drive, OneDrive, ecc.
+            // Nessun banner rosso: apri direttamente il selettore file o la guida se non dismessa.
+            const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
+            if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
+                if (iosGuideDismissCheckbox) {
+                    iosGuideDismissCheckbox.checked = false;
+                }
+                iosFilesGuideModal.style.display = 'flex';
+                return;
+            }
+            fileInput.click();
         }
     });
 }

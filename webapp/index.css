@@ -531,6 +531,24 @@ body {
     cursor: not-allowed;
 }
 
+.btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-secondary:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
 .btn-success {
     background: var(--success);
     color: #FFFFFF;
