@@ -233,7 +233,7 @@
                         </svg>
                         <span>Sfoglia Notebook...</span>
                     </button>
-                    <button type="button" id="unified-cloud-btn" class="btn btn-secondary btn-apple-large" title="Collega cartella iCloud Drive o Google Drive">
+                    <button type="button" id="unified-cloud-btn" class="btn btn-secondary btn-apple-large" style="display: none;" title="Collega cartella iCloud Drive o Google Drive">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
                         </svg>
@@ -241,9 +241,16 @@
                     </button>
                 </div>
 
-                <!-- Azioni discrete interne alla dropzone -->
-                <div class="drop-zone-actions">
-                    <button type="button" id="browse-folder-btn" class="btn-subtle" title="Seleziona una cartella intera contenente file Goodnotes">
+                <!-- Link discreto Guida Esportazione Goodnotes -->
+                <div class="drop-zone-guide-link-wrap">
+                    <button type="button" id="open-guide-link-btn" class="guide-text-link" title="Guida passo-passo per esportare da Goodnotes">
+                        <span>💡 Come esportare da Goodnotes?</span>
+                    </button>
+                </div>
+
+                <!-- Azioni discrete interne alla dropzone (legacy mantenute per gate/audit, nascoste da UI) -->
+                <div class="drop-zone-actions" style="display: none;">
+                    <button type="button" id="browse-folder-btn" class="btn-subtle" style="display: none;" title="Seleziona una cartella intera contenente file Goodnotes">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                         </svg>
@@ -251,7 +258,7 @@
                     </button>
 
                     <!-- Selezione Cartella Cloud Locale (File System Access API) -->
-                    <button type="button" id="cloud-dir-picker-btn" class="btn-subtle" title="Collega cartella Cloud locale (iCloud Drive / Google Drive)">
+                    <button type="button" id="cloud-dir-picker-btn" class="btn-subtle" style="display: none;" title="Collega cartella Cloud locale (iCloud Drive / Google Drive)">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                             <path d="M12 11v6"></path>
@@ -530,14 +537,14 @@
         </div>
     </div>
 
-    <!-- Modal Guida 2-Step iOS/iPadOS per Selezione File / Cartelle iCloud -->
-    <div id="ios-files-guide-modal" class="apple-modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Come selezionare file da iCloud su iOS">
+    <!-- Modal Guida 3-Step Esportazione da Goodnotes -->
+    <div id="ios-files-guide-modal" class="apple-modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ios-guide-title">
         <div class="apple-modal-card modal-notebooks-sheet">
             <div class="apple-modal-header">
                 <div class="apple-modal-title-group">
-                    <span class="apple-modal-badge">Guida iOS / iPadOS</span>
-                    <h3 class="apple-modal-title">Apri da iCloud Drive su iOS</h3>
-                    <p class="apple-modal-desc">Segui questi passaggi nell'app File di Apple per selezionare il tuo quaderno:</p>
+                    <span class="apple-modal-badge">Guida Esportazione</span>
+                    <h3 id="ios-guide-title" class="apple-modal-title">Come esportare e aprire il tuo quaderno</h3>
+                    <p id="ios-guide-desc" class="apple-modal-desc">3 semplici passaggi per estrarre e ascoltare tutte le registrazioni:</p>
                 </div>
                 <button id="ios-files-guide-close-btn" class="apple-modal-close-btn" aria-label="Chiudi guida">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -547,20 +554,33 @@
                 </button>
             </div>
             <div class="apple-modal-body" style="padding-top: 0.5rem;">
-                <div class="apple-guide-step">
+                <div class="apple-guide-step apple-guide-step-top">
                     <div class="apple-step-badge">1</div>
-                    <div class="apple-step-content">
-                        <span>Nel selettore di sistema, tocca <strong>"Sfoglia"</strong> in basso a destra e seleziona <strong>iCloud Drive</strong>.</span>
+                    <div class="apple-step-content-stacked">
+                        <span class="apple-step-title">Esporta da Goodnotes</span>
+                        <span>Apri il quaderno in Goodnotes, tocca in alto l'icona di Condivisione/Esporta (la freccia verso l'alto 📤) e scegli <strong>Esporta tutto</strong> (oppure dai tre puntini del quaderno nella libreria).</span>
                     </div>
                 </div>
-                <div class="apple-guide-step">
+                <div class="apple-guide-step apple-guide-step-top">
                     <div class="apple-step-badge">2</div>
-                    <div class="apple-step-content">
-                        <span>Entra nella cartella di Goodnotes e tocca il file <code>.goodnotes</code> per estrarre e ascoltare le registrazioni.</span>
+                    <div class="apple-step-content-stacked">
+                        <span class="apple-step-title">Seleziona formato .goodnotes</span>
+                        <span>Seleziona il formato <strong>Goodnotes</strong> (file <code>.goodnotes</code>) e tocca <em>Esporta</em>. Salva il file dove preferisci (su <em>File</em>, <em>Download</em> o nel tuo Cloud).</span>
                     </div>
                 </div>
-                <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; justify-content: flex-end;">
-                    <button id="ios-files-guide-choose-btn" class="apple-banner-action-btn">
+                <div class="apple-guide-step apple-guide-step-top">
+                    <div class="apple-step-badge">3</div>
+                    <div class="apple-step-content-stacked">
+                        <span class="apple-step-title">Carica ed Estrai</span>
+                        <span>Tocca <strong>Sfoglia Ora</strong> qui sotto e seleziona il file <code>.goodnotes</code> salvato per avviare subito la decodifica e l'ascolto delle registrazioni!</span>
+                    </div>
+                </div>
+                <div class="apple-guide-footer-row">
+                    <label class="apple-guide-checkbox-label">
+                        <input type="checkbox" id="ios-guide-dismiss-checkbox">
+                        <span>Non mostrare più questa guida</span>
+                    </label>
+                    <button type="button" id="ios-files-guide-choose-btn" class="apple-banner-action-btn">
                         <span>Sfoglia Ora</span>
                     </button>
                 </div>

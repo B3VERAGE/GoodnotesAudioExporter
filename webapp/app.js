@@ -65,6 +65,23 @@ const cloudPersistentRescanBtn = document.getElementById('cloud-persistent-resca
 const iosFilesGuideModal = document.getElementById('ios-files-guide-modal');
 const iosFilesGuideChooseBtn = document.getElementById('ios-files-guide-choose-btn');
 const iosFilesGuideCloseBtn = document.getElementById('ios-files-guide-close-btn');
+const openGuideLinkBtn = document.getElementById('open-guide-link-btn');
+const iosGuideDismissCheckbox = document.getElementById('ios-guide-dismiss-checkbox');
+
+// Supporto File System Access API
+const supportsDirectoryPicker = typeof window.showDirectoryPicker === 'function';
+
+function updateCloudButtonVisibility() {
+    if (!unifiedCloudBtn) return;
+    if (backendConnectionState && backendConnectionState.connected) {
+        unifiedCloudBtn.style.display = 'inline-flex';
+    } else if (supportsDirectoryPicker) {
+        unifiedCloudBtn.style.display = 'inline-flex';
+    } else {
+        unifiedCloudBtn.style.display = 'none';
+    }
+}
+updateCloudButtonVisibility();
 
 const trackSearchBar = document.getElementById('track-search-bar');
 const trackSearchInput = document.getElementById('track-search-input');
@@ -1565,12 +1582,22 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 dropZone.addEventListener('click', (e) => {
-    // Non propagare se si è cliccato sui bottoni d'azione
+    // Non propagare se si è cliccato sui bottoni d'azione o sul link della guida
     if (e.target.closest('#browse-folder-btn') || 
         e.target.closest('#unified-browse-btn') || 
         e.target.closest('#unified-cloud-btn') || 
         e.target.closest('#cloud-dir-picker-btn') || 
-        e.target.closest('#icloud-mac-scan-btn')) return;
+        e.target.closest('#icloud-mac-scan-btn') ||
+        e.target.closest('#open-guide-link-btn')) return;
+
+    const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
+    if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
+        if (iosGuideDismissCheckbox) {
+            iosGuideDismissCheckbox.checked = false;
+        }
+        iosFilesGuideModal.style.display = 'flex';
+        return;
+    }
     fileInput.click();
 });
 
@@ -1750,7 +1777,7 @@ function updateBackendUIState() {
         connectionStatusPill.title = l.statusPillTitleConnected || 'Connesso al backend Mac (Zero-Space iCloud attivo)';
         
         if (backendQuickBanner) backendQuickBanner.style.display = 'flex';
-        if (icloudMacScanBtn) icloudMacScanBtn.style.display = 'inline-flex';
+        if (icloudMacScanBtn) icloudMacScanBtn.style.display = 'none';
     } else {
         connectionStatusPill.className = 'status-pill status-standalone';
         if (connectionStatusText) connectionStatusText.innerText = l.statusStandalone || 'Standalone Offline';
@@ -1759,6 +1786,7 @@ function updateBackendUIState() {
         if (backendQuickBanner) backendQuickBanner.style.display = 'none';
         if (icloudMacScanBtn) icloudMacScanBtn.style.display = 'none';
     }
+    updateCloudButtonVisibility();
 }
 
 async function openICloudNotebooksModal() {
@@ -1878,6 +1906,10 @@ async function loadBackendNotebook(notebook) {
 }
 
 async function handleCloudDirectoryPicker() {
+    if (!supportsDirectoryPicker) {
+        showError("La selezione diretta di cartelle non è supportata su questo browser. Usa 'Sfoglia Notebook...' per selezionare il tuo file .goodnotes.");
+        return;
+    }
     try {
         const handle = await CloudSync.selectCloudDirectory();
         showLoader('Scansione cartella Cloud in corso...');
@@ -1977,10 +2009,15 @@ function isIosOrIpad() {
     return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-// Componente 1: Pulsanti di Selezione Unificati
+// Componente 1: Pulsanti di Selezione Unificati & Guida Esportazione
 if (unifiedBrowseBtn) {
-    unifiedBrowseBtn.addEventListener('click', () => {
-        if (isIosOrIpad() && iosFilesGuideModal) {
+    unifiedBrowseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const guideDismissed = localStorage.getItem('gn_guide_dismissed') === 'true';
+        if (isIosOrIpad() && iosFilesGuideModal && !guideDismissed) {
+            if (iosGuideDismissCheckbox) {
+                iosGuideDismissCheckbox.checked = false;
+            }
             iosFilesGuideModal.style.display = 'flex';
             return;
         }
@@ -1992,31 +2029,69 @@ if (unifiedCloudBtn) {
     unifiedCloudBtn.addEventListener('click', () => {
         if (backendConnectionState.connected) {
             openICloudNotebooksModal();
-        } else if (typeof window.showDirectoryPicker === 'function') {
+        } else if (supportsDirectoryPicker) {
             handleCloudDirectoryPicker();
         } else {
-            folderInput.click();
+            showError("La selezione diretta di cartelle non è supportata su questo browser. Usa 'Sfoglia Notebook...' per selezionare il tuo file .goodnotes.");
         }
     });
 }
 
-// Modal Guida iOS Files
+// Link discreto per aprire la guida in ogni momento
+if (openGuideLinkBtn) {
+    openGuideLinkBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (iosGuideDismissCheckbox) {
+            iosGuideDismissCheckbox.checked = localStorage.getItem('gn_guide_dismissed') === 'true';
+        }
+        if (iosFilesGuideModal) {
+            iosFilesGuideModal.style.display = 'flex';
+        }
+    });
+}
+
+// Checkbox "Non mostrare più questa guida"
+if (iosGuideDismissCheckbox) {
+    iosGuideDismissCheckbox.addEventListener('change', () => {
+        if (iosGuideDismissCheckbox.checked) {
+            localStorage.setItem('gn_guide_dismissed', 'true');
+        } else {
+            localStorage.removeItem('gn_guide_dismissed');
+        }
+    });
+}
+
+// Modal Guida: Azione "Sfoglia Ora"
 if (iosFilesGuideChooseBtn) {
     iosFilesGuideChooseBtn.addEventListener('click', () => {
+        if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
+            localStorage.setItem('gn_guide_dismissed', 'true');
+        }
         if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
         fileInput.click();
     });
 }
 
+// Modal Guida: Chiusura tramite bottone "X"
 if (iosFilesGuideCloseBtn) {
     iosFilesGuideCloseBtn.addEventListener('click', () => {
+        if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
+            localStorage.setItem('gn_guide_dismissed', 'true');
+        }
         if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
     });
 }
 
+// Modal Guida: Chiusura toccando lo sfondo (backdrop)
 if (iosFilesGuideModal) {
     iosFilesGuideModal.addEventListener('click', (e) => {
-        if (e.target === iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
+        if (e.target === iosFilesGuideModal) {
+            if (iosGuideDismissCheckbox && iosGuideDismissCheckbox.checked) {
+                localStorage.setItem('gn_guide_dismissed', 'true');
+            }
+            iosFilesGuideModal.style.display = 'none';
+        }
     });
 }
 

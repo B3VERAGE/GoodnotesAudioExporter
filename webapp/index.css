@@ -1804,3 +1804,102 @@ footer.app-footer {
     transition: width 0.4s ease;
 }
 
+/* COMPONENTE 1: Link Guida Goodnotes */
+.drop-zone-guide-link-wrap {
+    margin-top: 0.85rem;
+    display: flex;
+    justify-content: center;
+}
+
+.guide-text-link {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-size: 0.88rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: var(--transition-fast);
+    text-decoration: none;
+    min-height: 44px;
+}
+
+.guide-text-link:hover {
+    background: var(--accent-subtle);
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+/* Modal Guida Esportazione 3-Step */
+.apple-guide-step-top {
+    align-items: flex-start;
+}
+
+.apple-step-content-stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    line-height: 1.45;
+    font-size: 0.88rem;
+    color: var(--text-primary);
+}
+
+.apple-step-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.92rem;
+}
+
+.apple-guide-footer-row {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.apple-guide-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.apple-guide-checkbox-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+@media (max-width: 600px) {
+    .drop-zone-primary-actions {
+        width: 100%;
+    }
+    .drop-zone-primary-actions .btn-apple-large {
+        width: 100%;
+        max-width: 320px;
+        justify-content: center;
+        padding: 0.85rem 1.5rem;
+        font-size: 1rem;
+    }
+    .apple-guide-footer-row {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+    .apple-guide-footer-row button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
