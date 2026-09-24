@@ -1165,9 +1165,27 @@ body {
     animation: appleModalPop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.apple-modal-backdrop.closing {
+    animation: appleBackdropFadeOut 0.22s ease-out forwards;
+}
+
+.apple-modal-backdrop.closing .apple-modal-sheet {
+    animation: appleModalPopOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes appleBackdropFadeOut {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
 @keyframes appleModalPop {
     0% { opacity: 0; transform: scale(0.92) translateY(12px); }
     100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes appleModalPopOut {
+    0% { opacity: 1; transform: scale(1) translateY(0); }
+    100% { opacity: 0; transform: scale(0.92) translateY(12px); }
 }
 
 .apple-modal-header {
@@ -1853,7 +1871,92 @@ footer.app-footer {
     text-decoration: underline;
 }
 
-/* Modal Guida Esportazione 3-Step */
+/* Bottone Libreria Offline Utility Calm */
+.apple-btn-utility {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    font-weight: 500;
+    padding: 0.42rem 0.85rem;
+    border-radius: 980px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    min-height: 36px;
+    font-family: inherit;
+}
+
+.apple-btn-utility:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--text-primary);
+    border-color: rgba(0, 0, 0, 0.15);
+    transform: translateY(-1px);
+}
+
+@media (prefers-color-scheme: dark) {
+    .apple-btn-utility {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-secondary);
+    }
+    .apple-btn-utility:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--text-primary);
+    }
+}
+
+/* Info Pill Discreta Dropzone */
+.drop-zone-info-hint {
+    margin-top: 0.85rem;
+    display: flex;
+    justify-content: center;
+}
+
+.guide-info-pill {
+    background: rgba(0, 113, 227, 0.06);
+    border: 1px solid rgba(0, 113, 227, 0.15);
+    color: var(--accent);
+    font-size: 0.84rem;
+    font-weight: 500;
+    padding: 0.4rem 0.95rem;
+    border-radius: 980px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    font-family: inherit;
+    min-height: 36px;
+}
+
+.guide-info-pill:hover {
+    background: rgba(0, 113, 227, 0.12);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+}
+
+/* Modal Guida Esportazione 3-Step con Scroll Fluido */
+.modal-guide-sheet {
+    max-width: 520px !important;
+    max-height: 85vh;
+    max-height: 85dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 1.5rem 1.35rem 1.25rem 1.35rem !important;
+}
+
+.modal-guide-scroll-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto;
+    padding-right: 0.35rem;
+    padding-bottom: 1.75rem;
+    margin-top: 0.25rem;
+}
+
 .apple-guide-step-top {
     align-items: flex-start;
 }
@@ -1874,47 +1977,33 @@ footer.app-footer {
     font-size: 0.92rem;
 }
 
-.apple-guide-footer-row {
-    margin-top: 1.25rem;
+.modal-guide-footer {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
-.apple-guide-checkbox-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    user-select: none;
-}
-
-.apple-guide-checkbox-label input[type="checkbox"] {
-    accent-color: var(--accent);
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
+.btn-guide-submit {
+    padding: 0.85rem 1.8rem;
+    font-size: 0.98rem;
+    font-weight: 600;
+    border-radius: 980px;
+    width: 100%;
+    max-width: 220px;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
 }
 
 @media (max-width: 600px) {
-    .drop-zone-primary-actions {
+    .btn-guide-submit {
+        max-width: 100%;
         width: 100%;
     }
-    .drop-zone-primary-actions .btn-apple-large {
-        width: 100%;
-        max-width: 320px;
-        justify-content: center;
-        padding: 0.85rem 1.5rem;
-        font-size: 1rem;
+    .modal-guide-sheet {
+        padding: 1.25rem 1rem 1rem 1rem !important;
     }
-    .apple-guide-footer-row {
-        flex-direction: column-reverse;
-        align-items: stretch;
-    }
+}
     .apple-guide-footer-row button {
         width: 100%;
         justify-content: center;

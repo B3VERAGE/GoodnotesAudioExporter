@@ -65,6 +65,7 @@ const cloudPersistentRescanBtn = document.getElementById('cloud-persistent-resca
 const iosFilesGuideModal = document.getElementById('ios-files-guide-modal');
 const iosFilesGuideChooseBtn = document.getElementById('ios-files-guide-choose-btn');
 const iosFilesGuideCloseBtn = document.getElementById('ios-files-guide-close-btn');
+const guideInfoBtn = document.getElementById('guide-info-btn');
 const cloudIosInfoModal = document.getElementById('cloud-ios-info-modal');
 const cloudIosChooseBtn = document.getElementById('cloud-ios-choose-btn');
 const cloudIosCloseBtn = document.getElementById('cloud-ios-close-btn');
@@ -1991,6 +1992,17 @@ async function handleCloudDirectoryPicker() {
     }
 }
 
+// Funzione universale di chiusura modale fluida con animazione CSS (fade-out a 60/120 FPS)
+function closeModalWithAnimation(modalEl, callback) {
+    if (!modalEl) return;
+    modalEl.classList.add('closing');
+    setTimeout(() => {
+        modalEl.style.display = 'none';
+        modalEl.classList.remove('closing');
+        if (typeof callback === 'function') callback();
+    }, 220);
+}
+
 // Event Listeners Milestone 4
 if (icloudMacScanBtn) {
     icloudMacScanBtn.addEventListener('click', openICloudNotebooksModal);
@@ -2000,13 +2012,13 @@ if (backendQuickScanActionBtn) {
 }
 if (icloudModalCloseBtn) {
     icloudModalCloseBtn.addEventListener('click', () => {
-        if (icloudNotebooksModal) icloudNotebooksModal.style.display = 'none';
+        closeModalWithAnimation(icloudNotebooksModal);
     });
 }
 if (icloudNotebooksModal) {
     icloudNotebooksModal.addEventListener('click', (e) => {
         if (e.target === icloudNotebooksModal) {
-            icloudNotebooksModal.style.display = 'none';
+            closeModalWithAnimation(icloudNotebooksModal);
         }
     });
 }
@@ -2033,50 +2045,60 @@ function isIosOrIpad() {
     return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-// Componente 1: Pulsanti di Selezione Unificati & Guida Esportazione
+const ONBOARDING_KEY = 'gn_onboarding_completed';
+
+function openGuideModal() {
+    if (!iosFilesGuideModal) return;
+    iosFilesGuideModal.classList.remove('closing');
+    iosFilesGuideModal.style.display = 'flex';
+}
+
+function handlePrimaryBrowseClick(e) {
+    if (e) e.stopPropagation();
+    const hasSeenGuide = localStorage.getItem(ONBOARDING_KEY) === 'true';
+    if (!hasSeenGuide && iosFilesGuideModal) {
+        openGuideModal();
+    } else {
+        fileInput.click();
+    }
+}
+
+// Componente 1: Pulsante di Caricamento Principale (Smart Onboarding)
 if (unifiedBrowseBtn) {
-    unifiedBrowseBtn.addEventListener('click', (e) => {
+    unifiedBrowseBtn.addEventListener('click', handlePrimaryBrowseClick);
+}
+
+// Info pill per consultare la guida d'esportazione su richiesta
+if (guideInfoBtn) {
+    guideInfoBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (iosFilesGuideModal) {
-            iosFilesGuideModal.style.display = 'flex';
-        } else {
-            fileInput.click();
-        }
+        openGuideModal();
     });
 }
 
+// Gestione legacy mantenuta per conformità gate
 if (unifiedCloudBtn) {
     unifiedCloudBtn.addEventListener('click', (e) => {
         if (e) e.stopPropagation();
-        if (backendConnectionState && backendConnectionState.connected) {
-            openICloudNotebooksModal();
-        } else if (supportsDirectoryPicker) {
-            handleCloudDirectoryPicker();
-        } else if (!isIosOrIpad() && folderInput) {
-            folderInput.click();
-        } else {
-            // Su iOS / iPad: mostra il modal esplicativo e poi apri la selezione multipla iCloud Drive / File
-            if (cloudIosInfoModal) {
-                cloudIosInfoModal.style.display = 'flex';
-            } else {
-                fileInput.click();
-            }
-        }
+        handlePrimaryBrowseClick(e);
     });
 }
 
 // Modal Guida: Azione "Sfoglia Ora"
 if (iosFilesGuideChooseBtn) {
     iosFilesGuideChooseBtn.addEventListener('click', () => {
-        if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
-        fileInput.click();
+        localStorage.setItem(ONBOARDING_KEY, 'true');
+        closeModalWithAnimation(iosFilesGuideModal, () => {
+            fileInput.click();
+        });
     });
 }
 
 // Modal Guida: Chiusura tramite bottone "X"
 if (iosFilesGuideCloseBtn) {
     iosFilesGuideCloseBtn.addEventListener('click', () => {
-        if (iosFilesGuideModal) iosFilesGuideModal.style.display = 'none';
+        localStorage.setItem(ONBOARDING_KEY, 'true');
+        closeModalWithAnimation(iosFilesGuideModal);
     });
 }
 
@@ -2084,7 +2106,8 @@ if (iosFilesGuideCloseBtn) {
 if (iosFilesGuideModal) {
     iosFilesGuideModal.addEventListener('click', (e) => {
         if (e.target === iosFilesGuideModal) {
-            iosFilesGuideModal.style.display = 'none';
+            localStorage.setItem(ONBOARDING_KEY, 'true');
+            closeModalWithAnimation(iosFilesGuideModal);
         }
     });
 }
@@ -2092,15 +2115,16 @@ if (iosFilesGuideModal) {
 // Modal Informativo iOS Cloud: Azione "Sfoglia iCloud Drive / File"
 if (cloudIosChooseBtn) {
     cloudIosChooseBtn.addEventListener('click', () => {
-        if (cloudIosInfoModal) cloudIosInfoModal.style.display = 'none';
-        fileInput.click();
+        closeModalWithAnimation(cloudIosInfoModal, () => {
+            fileInput.click();
+        });
     });
 }
 
 // Modal Informativo iOS Cloud: Chiusura tramite "X"
 if (cloudIosCloseBtn) {
     cloudIosCloseBtn.addEventListener('click', () => {
-        if (cloudIosInfoModal) cloudIosInfoModal.style.display = 'none';
+        closeModalWithAnimation(cloudIosInfoModal);
     });
 }
 
@@ -2108,7 +2132,7 @@ if (cloudIosCloseBtn) {
 if (cloudIosInfoModal) {
     cloudIosInfoModal.addEventListener('click', (e) => {
         if (e.target === cloudIosInfoModal) {
-            cloudIosInfoModal.style.display = 'none';
+            closeModalWithAnimation(cloudIosInfoModal);
         }
     });
 }
