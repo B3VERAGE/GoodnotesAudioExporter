@@ -1,36 +1,38 @@
 # 🧠 MEMORY.md — Goodnotes
 
-> Ultimo aggiornamento: 2026-09-23
+> Ultimo aggiornamento: 2026-09-24
 
 ## 🎯 Stato attuale
-L'applicazione è stata trasformata in un'app desktop nativa per macOS (`dist/Goodnotes Agent.app`) con interfaccia Apple Light Mode e architettura "Zero-Space" collegata direttamente a iCloud Drive. Tutti i bug di avvio (conflitti di porta, persistenza API key, tracce fantasma rimosse da Goodnotes) sono stati risolti e validati con test di robustezza al 100% su tutti i quaderni reali. La richiesta attuale è di ristrutturare il backend ed ottimizzare l'efficienza complessiva del sistema.
+Ristrutturazione completa del backend v2.0 e allineamento al 100% della PWA client-side completati. Risolti tutti i problemi di tracce non rilevate (fallback su atomo `mvhd` e inclusione tracce prive di durata Protobuf) e di corruzione dei nomi/lettere saltate (protezione vocali accentate italiane, Cesare statistico senza falsi positivi, whitelist acronimi medici). Validati con successo tutti i 4 quaderni reali su iCloud (113 tracce fisiche estratte, 7 ghost tracks eliminate, 0 errori). Compilato e verificato il nuovo bundle standalone macOS Apple Silicon (`dist/Goodnotes Agent.app`).
 
 ## 📁 File chiave
-- `AGENTS.md`: Specifiche del progetto, matrice di delegazione subagenti (`goodnotes-team-plugin`) e workflow skill.
-- `.agents/rules/`: Regole modulari per architettura, pattern backend asincroni e standard di decodifica/testing.
-- `README.md`: Documentazione tecnica completa del repository GitHub.
-- `run_desktop_app.py`: Entrypoint dell'applicazione desktop nativa macOS (pywebview + server Uvicorn in daemon thread con binding dinamico su porta libera).
-- `agent_server.py`: Server API Starlette locale; gestisce gli endpoint REST per scansione iCloud, decodifica metadati, streaming audio preview, configurazione API key e apertura folder picker nativo.
-- `goodnotes_agent.py`: Logica di business e integrazione SDK; parsing in-memory dei file `.goodnotes` (zip), decodifica Protobuf, decifratura titoli (Caesar + Unicode Math) ed esportazione con deduplicazione Smart Skip.
-- `decode_goodnotes_pb.py`: Modulo originale standalone di decodifica Protobuf e manipolazione stream MP4 (`mvhd` box per data registrazione reale).
-- `index.html`: Dashboard frontend moderna in stile Apple Light Mode, con player audio fluttuante, visualizzazione cartelle iCloud e badge di data/stato.
-- `Goodnotes Agent.spec`: Specifica PyInstaller per la compilazione del bundle `.app` nativo Apple Silicon con icona personalizzata `app_icon.icns`.
+- `backend/config.py`: Gestione dinamica percorsi (`WORKSPACE_ROOT`, `sys._MEIPASS`), caricamento `.env` assoluto e discovery porte TCP libere.
+- `backend/core/title_cleaner.py`: Normalizzazione Unicode NFC, decodifica simboli matematici completi, protezione vocali accentate italiane, Cesare statistico e whitelist acronimi medici (`ECG`, `BPCO`, `SCA`, `RCU`, `CEC`, `PAD`).
+- `backend/core/mp4_parser.py`: In-memory parser atomo `mvhd` (head 256KB & tail 1.5MB) per data di creazione reale (-2082844800) e durata fallback.
+- `backend/core/protobuf_decoder.py`: Deserializzazione in-memory con `blackboxprotobuf` da `index.events.pb`.
+- `backend/services/icloud_scanner.py`: Scansione ricorsiva con validazione zip e firma `index.events.pb`, tolleranza NFD/NFC, esclusione cartelle spuri.
+- `backend/services/cache_manager.py`: Caching in-memory thread-safe con validità `(path, mtime, size)` e latenza hit < 0.1 ms.
+- `backend/services/audio_exporter.py`: Pipeline Zero-Space per streaming in-memory diretto, sanitizzazione filesystem e Smart Skip deduplicazione.
+- `backend/api/routes.py` & `backend/api/server.py`: Starlette API asincrona con 13 route, offloading CPU/disk via `asyncio.to_thread` e porta dinamica.
+- `webapp/app.js`: PWA client-side 100% offline con piena parità algoritmica rispetto al backend v2.0 per Safari / iPadOS.
+- `Goodnotes Agent.spec`: Configurazione PyInstaller aggiornata con inclusione package `backend` e `hiddenimports`.
+- `dist/Goodnotes Agent.app`: Bundle desktop standalone nativo per macOS (Apple Silicon arm64).
 
 ## 🧩 Fatti permanenti
-- **Repository GitHub**: `https://github.com/B3VERAGE/GoodnotesAudioExporter.git` (utente `B3VERAGE`).
-- **Plugin Subagenti**: `goodnotes-team-plugin` in `~/.gemini/config/plugins/goodnotes-team-plugin/` con 3 agenti (`goodnotes-backend-architect`, `goodnotes-ui-specialist`, `goodnotes-qa-guard`) e router `goodnotes-team-router`.
-- **Architettura Zero-Space**: I quaderni Goodnotes non vengono scompattati su disco locale. Vengono aperti in memoria come flussi ZIP direttamente dal percorso iCloud (`~/Library/Mobile Documents/com~apple~CloudDocs/Università-Docs e Registrazioni`).
-- **Risoluzione percorsi bundle**: All'interno del pacchetto `.app`, `sys._MEIPASS` contiene le risorse embedded (`index.html`), mentre `WORKSPACE_ROOT` risale dinamicamente al folder esterno dell'app per caricare `.env` e salvare `scratch/export_mappings.json`.
-- **Rilevamento porte dinamiche**: La porta default è la 8000; se occupata, `run_desktop_app.py` seleziona la prima porta TCP libera sul localhost e `index.html` ricava dinamicamente `API_URL` da `window.location.origin`.
-- **Validazione Gemini**: Chiave memorizzata in `.env` come `GEMINI_API_KEY`; la validazione avviene tramite GET a `generativelanguage.googleapis.com/v1beta/models?key=...`.
+- **Repository GitHub**: `https://github.com/B3VERAGE/GoodnotesAudioExporter.git` (branch `main`).
+- **Indipendenza assoluta da AI**: Il core engine (scansione, decodifica Protobuf, MP4 parser, pulizia titoli ed export) è 100% locale, deterministico e offline. L'API Gemini è opzionale e limitata alle funzioni di chat assistant.
+- **Architettura Zero-Space**: I quaderni `.goodnotes` non vengono mai scompattati su disco locale; vengono manipolati come stream ZIP in-memory direttamente da iCloud Drive (`Università-Docs e Registrazioni`).
+- **Parità algoritmica Desktop/PWA**: Sia il backend Python sia la PWA client-side in `webapp/app.js` condividono le medesime logiche di decifratura titoli, gestione date e fallback durata `mvhd`.
+- **Rilevamento porte dinamiche**: La porta predefinita è 8000; se occupata, il server negozia la prima porta TCP libera sul localhost e il frontend rileva `API_URL` da `window.location.origin`.
 
 ## 🐛 Bug noti & risoluzioni
-- `{"detail":"Not Found"}` all'avvio → Porta 8000 occupata da processo `open-terminal` esterno → Risolto con selezione dinamica porta libera in `run_desktop_app.py` e URL dinamico in `index.html`.
-- Perdita della `GEMINI_API_KEY` al riavvio → `load_dotenv()` caricava dal CWD di avvio bundle anziché da `WORKSPACE_ROOT` → Risolto forzando `load_dotenv(os.path.join(WORKSPACE_ROOT, ".env"))`.
-- Tracce "Mancanti" e "Registrazioni Senza Nome" da 0 MB → Goodnotes lascia riferimenti storici in `index.events.pb` anche dopo aver eliminato i file fisici → Risolto filtrando in `analyze_notebook_audios` solo i file effettivamente presenti in `attachments/`.
-- Nomi cifrati o font strani → Goodnotes applica cifrari stile Cesare (+8/+4) e font matematici Unicode → Risolto con normalizzazione ASCII e decodifica alfabetica su `clean_filename`.
+- Tracce non rilevate con durata assente nel Protobuf → Eliminato scarto `if duration != "N/A"` e integrato fallback su box `mvhd` (timescale/duration).
+- Lettere saltate e corruzione vocali accentate (`è` -> caratteri errati) → Isolate e protette le vocali accentate italiane prima delle operazioni alfabetiche.
+- Falsi positivi cifrario Cesare su parole italiane corte (`tum`, `tir`, `inizio`) → Introdotta validazione statistica con soglia rigida di parole non italiane prima di tentare lo shift.
+- Acronimi medici (`ECG`, `BPCO`, `SCA`, `RCU`, `PAD`) trasformati in minuscolo → Implementata whitelist esplicita che ne preserva il case originale.
+- Archivi estranei o cartelle con spazi (`audio non miei `) che bloccavano l'analisi → Aggiunta verifica preventiva della firma `index.events.pb` all'interno degli zip.
 
 ## 📋 Prossimi passi
-1. Refactoring modulare del backend: separare `agent_server.py` e `goodnotes_agent.py` in moduli dedicati (core/decoder, services/icloud, api/routes, core/config) eliminando logica duplicata e script monolitici.
-2. Ottimizzazione delle performance di I/O e caching: implementare caching LRU in-memory dei metadati Protobuf già decodificati e I/O asincrono per l'accesso ai file `.goodnotes` su iCloud.
-3. Disaccoppiamento threadpool per operazioni CPU-bound: migrare la decodifica protobuf e la manipolazione audio su executor asincroni non bloccanti per massimizzare la reattività della GUI.
+1. Validazione utente su eventuali quaderni Goodnotes storici aggiuntivi per verificare ulteriori variazioni di formato o cifrari non ancora censiti.
+2. Implementazione della selezione multi-cartella o custom directory picker nella PWA offline per iPadOS/Safari.
+3. Aggiunta opzionale di esportazione batch concorrente/parallela per cartelle con più di 10 quaderni pesanti (> 1 GB ciascuno).

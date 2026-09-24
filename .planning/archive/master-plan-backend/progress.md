@@ -23,4 +23,5 @@
   - Aggiornato `Goodnotes Agent.spec` con inclusione bundle del package `backend` e `hiddenimports` completi.
   - Esecuzione Quality Gate con `scratch/verify_decoding_robustness.py`: 100% SUCCESS (4/4 quaderni, 113 tracce audio reali convalidate, 7 ghost tracks eliminate, 0 errori).
   - Compilazione PyInstaller bundle macOS Apple Silicon completata con successo: `dist/Goodnotes Agent.app` generato e verificato (Mach-O 64-bit arm64, Info.plist OK).
+  - Aggiornato `webapp/app.js` portando la PWA client-side offline a piena parità algoritmica con il backend v2.0 (decodifica Unicode Math, protezione accenti, fallback atomo mvhd, acronimi medici e sanitizzazione).
   - Master Plan Completato al 100%.
